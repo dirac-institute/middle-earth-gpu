@@ -1,9 +1,10 @@
 # GitHub Actions self-hosted runner with a GPU lock, for the DiRAC GPU VM.
 #
-# Based on GitHub's official runner image. Pinned: to upgrade, change the tag
-# here (pick a release at least two weeks old) and `podman compose up -d
-# --build`. The runner also self-updates in place between rebuilds.
-FROM ghcr.io/actions/actions-runner:2.338.2
+# Based on GitHub's official runner image. Pinned by tag and digest, because
+# GitHub re-pushes tags. To upgrade, replace both and `podman compose up -d
+# --build`; DEPLOY.md, "Upgrading the runner", shows how to look up the
+# digest. The runner also self-updates in place between rebuilds.
+FROM ghcr.io/actions/actions-runner:2.338.2@sha256:4037925f16bd0626196684aff1853dabd242675c82efe08f0a2d376694738d19
 
 USER root
 

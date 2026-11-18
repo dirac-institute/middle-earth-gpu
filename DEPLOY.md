@@ -332,9 +332,18 @@ more queues waiting for it.
 GitHub requires self-hosted runners to stay reasonably current. The runner
 updates itself in place when GitHub releases a new version, but a rebuilt
 container starts again from the image's version. Every few months, change the
-tag in the `Dockerfile` to a release at least two weeks old
+`FROM` line in the `Dockerfile` to a newer release
 (https://github.com/actions/runner/releases) and `podman compose up -d
 --build`. Registrations are unaffected.
+
+The `FROM` line pins both the tag and the digest of its x86_64 image, because
+GitHub re-pushes existing tags. To get the digest for a tag, for example
+`2.338.2`:
+
+```bash
+podman pull ghcr.io/actions/actions-runner:2.338.2
+podman image inspect --format '{{.Digest}}' ghcr.io/actions/actions-runner:2.338.2
+```
 
 ## Removing a runner, or if its credentials leak
 
