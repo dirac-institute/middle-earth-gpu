@@ -31,8 +31,10 @@ podman exec gpu-runner-dirac-institute nvidia-smi   # the GPU is visible
 ```
 
 Both runners should show as **Idle** in each org's Settings → Actions →
-Runners. Then run a workflow from `examples/gpu-benchmark.yml` (see "Using the
-runner") and check its "Set up runner" step says it acquired the GPU lock.
+Runners. Then run this repo's **GPU smoke test** workflow by hand (Actions →
+GPU smoke test → Run workflow; it must be on the runner group's workflow
+list) and check that it passes and its "Set up runner" step says it acquired
+the GPU lock.
 
 Then register the VM with the gadget monitor; see "Monitoring" below.
 
@@ -52,6 +54,7 @@ Then register the VM with the gadget monitor; see "Monitoring" below.
 | `compose.yaml` | One runner service per org, plus `monitoring` (the VM's CPU, memory and disks on port 9110). |
 | `monitoring/` | Service VM monitor, copied unchanged from [middle-earth-gadget-monitor](https://github.com/dirac-institute/middle-earth-gadget-monitor). |
 | `examples/gpu-benchmark.yml` | A workflow to copy into a repo that wants to use the GPU. |
+| `.github/workflows/gpu-smoke-test.yml` | Run by hand to check a deployed runner: hooks, lock and GPU, with no project code. |
 | `SECRETS.md` | What is secret here, where it lives, and who it trusts. |
 
 ## Architecture
