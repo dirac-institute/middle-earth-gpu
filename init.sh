@@ -20,10 +20,10 @@ ENV_FILE="$REPO_DIR/.env"
 # Written by IT when the VM is provisioned and authoritative for the service
 # account. tcsh syntax: `set VMUSER=astro-myservice`.
 VM_SET=/root/VM.set
-# Where this service's files live on the root_squash NFS share. Runner
-# registrations go under runner-state/<org>/ (see SECRETS.md).
-# TODO: confirm this path with PACS before first deploy.
-SHIRE_DIR=/service/shire/gpu-runner
+# This service's directory on the root_squash NFS share: the whole mount,
+# which is this VM's own export. Runner registrations go under
+# runner-state/<org>/ (see SECRETS.md).
+SHIRE_DIR=/service/shire
 # Local (not NFS) directory shared by both runner containers for the GPU lock.
 LOCK_DIR=/var/lib/middle-earth-gpu-runner/gpu-lock
 # One directory per GitHub org this VM serves. Must match compose.yaml.
