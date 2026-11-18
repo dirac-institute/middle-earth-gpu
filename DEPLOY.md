@@ -127,6 +127,13 @@ runner group). Creating groups needs the GitHub Team plan.
   maintainer approves the run. Only jobs defined directly in a listed file
   can use the group.
 
+  **If a job waits forever** at "Waiting for a runner to pick up this job"
+  while the runner shows as Idle, one of the three settings above is missing:
+  the repo isn't selected, public repositories aren't allowed, or the
+  workflow isn't listed exactly as above. GitHub gives no error. Fix the
+  setting, cancel the run and start a new one: a run that is already queued
+  is not matched again.
+
 **2. Only list workflows with trusted triggers:** `push` (to `main`),
 `workflow_dispatch`, `schedule`, `release`. Never list a workflow that uses
 `pull_request_target` or `workflow_run`: those run from `main`, so they pass
