@@ -39,9 +39,11 @@ jobs:
           cat /gpu-lock/held/owner /gpu-lock/held/info
 
       - name: No container engine or sudo
+        # `! cmd` never trips `set -e` in bash, so each check exits explicitly.
         run: |
-          ! test -S /var/run/docker.sock
-          ! sudo -n true
+          if test -S /var/run/docker.sock; then echo "::error::docker socket is mounted"; exit 1; fi
+          if sudo -n true 2>/dev/null; then echo "::error::sudo works"; exit 1; fi
+          echo "No container socket; sudo is refused."
 
       - name: Hold the GPU
         env:
