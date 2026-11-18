@@ -9,8 +9,8 @@ belong to one org, so there are two runner containers. They take turns on the
 GPU: one job at a time, across both orgs.
 
 ```bash
-git clone <this repo> /root/middle-earth-gpu-runner
-cd /root/middle-earth-gpu-runner
+git clone git@github.com:dirac-institute/middle-earth-gpu.git /root/middle-earth-gpu
+cd /root/middle-earth-gpu
 sudo ./init.sh
 sudo ./register.sh dirac-institute      # first deploy only; prompts for a token
 sudo ./register.sh lincc-frameworks     # first deploy only; prompts for a token
@@ -355,6 +355,27 @@ podman pull ghcr.io/actions/actions-runner:2.338.2
 podman image inspect --format '{{.Digest}}' ghcr.io/actions/actions-runner:2.338.2
 ```
 
+## Restarting a runner
+
+To restart a runner, even mid-job, use `podman compose restart` or `podman
+stop`, never `podman kill`. A stopped runner closes its GitHub session. If
+it is killed, or crashes, GitHub keeps treating it as busy for a while, and
+it takes no jobs:
+
+1. **About 3 minutes offline.** When it comes back, its log repeats "A
+   session for this runner already exists" until GitHub drops the old
+   session. It then reconnects ("Runner reconnected") with no help.
+2. **Then "Active" on the dead job, indefinitely.** GitHub still thinks the
+   job that was running is running. Cancel that run on GitHub; the runner's
+   log shows "Job cancellation request ... received, cancellation timeout 5
+   minutes", and it goes Idle when those 5 minutes are up. If nobody
+   cancels, it lasts until the job's `timeout-minutes`.
+
+The GPU lock is not the problem in either case: the runner clears its own
+stale lock as soon as its container starts. This was measured on 2026-11-18
+(about 10 minutes from `podman kill` to the next job, with a cancel). A VM
+reboot mid-job probably behaves the same way, but that has not been tested.
+
 ## Removing a runner, or if its credentials leak
 
 In the org on GitHub, Settings → Actions → Runners, remove the runner. Its
@@ -435,4 +456,6 @@ entry. Otherwise the dashboard shows it as down.
 
 `restart: unless-stopped` only survives reboot if `podman-restart.service` is
 enabled, which `init.sh` does. A job that was running at reboot fails on
-GitHub; its GPU lock is cleared when its runner restarts.
+GitHub; its GPU lock is cleared when its runner restarts. Expect the
+runner to be unavailable for a while after a reboot mid-job; see
+"Restarting a runner".
