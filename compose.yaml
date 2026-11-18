@@ -1,36 +1,66 @@
-# Middle-earth service example.
+# Middle-earth GPU runner.
 #
 #   podman compose up -d --build
 #
-# Apache serves static files and proxies API requests to a Python backend,
-# all in one container on port 8080. The VM's reverse proxy handles TLS
-# termination and routes traffic here. A second container, `monitoring`,
-# reports the VM's CPU, memory and disks on port 9110 for the gadget monitor.
+# Two GitHub Actions runners, one per GitHub org, sharing this VM's GPU. A
+# runner can only belong to one org, hence two. They take turns on the GPU
+# through a lock directory both mount (runner/gpu-lock-lib.sh). A third
+# container, `monitoring`, reports the VM's CPU, memory and disks on port
+# 9110 for the gadget monitor.
 #
-# SVC_USER, SVC_UID, SVC_GID, and SVC_FQDN must be set in .env in production
-# (written by init.sh from IT's /root/VM.set). There are no defaults; missing
-# values will cause podman compose to fail.
+# Nothing listens for inbound traffic: the runners connect out to GitHub.
+#
+# SVC_UID, SVC_GID, SVC_USER, SVC_SHIRE_DIR and GPU_LOCK_DIR must be set in
+# .env (written by init.sh from IT's /root/VM.set). There are no defaults;
+# missing values will cause podman compose to fail.
+
+# Settings shared by every runner service.
+x-runner: &runner
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      SVC_UID: "${SVC_UID}"
+      SVC_GID: "${SVC_GID}"
+      SVC_USER: "${SVC_USER}"
+  image: localhost/middle-earth-gpu-runner:latest
+  hostname: "${SVC_FQDN}"
+  user: "${SVC_UID}:${SVC_GID}"
+  # The GPU, via the CDI spec init.sh generates. No Docker/podman socket is
+  # ever mounted into a runner.
+  devices:
+    - nvidia.com/gpu=all
+  restart: unless-stopped
 
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        SVC_UID: "${SVC_UID}"
-        SVC_GID: "${SVC_GID}"
-        SVC_USER: "${SVC_USER}"
-    image: middle-earth-example/app:latest
-    container_name: example-app
-    hostname: "${SVC_FQDN}"
+  # To add an org: copy one of these blocks, change the three org names, add
+  # the org to ORGS in init.sh, and run register.sh for it (DEPLOY.md).
+  runner-dirac-institute:
+    <<: *runner
+    container_name: gpu-runner-dirac-institute
     environment:
-      SERVER_NAME: "${SVC_FQDN}"
-    ports:
-      - "127.0.0.1:8080:8080"
-    restart: unless-stopped
-    user: "${SVC_UID}:${SVC_GID}"
+      RUNNER_ORG: dirac-institute
+      LOCK_OWNER: dirac-institute
+    volumes:
+      # This org's registration, on the root_squash NFS share (SECRETS.md).
+      - "${SVC_SHIRE_DIR}/runner-state/dirac-institute:/runner-state"
+      # The GPU lock, shared with the other runner. Local disk; :z because
+      # two containers share it.
+      - "${GPU_LOCK_DIR}:/gpu-lock:z"
     labels:
-      idac.service: example-app
+      idac.service: gpu-runner-dirac-institute
+
+  runner-lincc-frameworks:
+    <<: *runner
+    container_name: gpu-runner-lincc-frameworks
+    environment:
+      RUNNER_ORG: lincc-frameworks
+      LOCK_OWNER: lincc-frameworks
+    volumes:
+      - "${SVC_SHIRE_DIR}/runner-state/lincc-frameworks:/runner-state"
+      - "${GPU_LOCK_DIR}:/gpu-lock:z"
+    labels:
+      idac.service: gpu-runner-lincc-frameworks
 
   # CPU, memory and disks of this VM, for the gadget monitor (monitoring/README.md).
   # Copied unchanged from middle-earth-gadget-monitor; its settings live in
@@ -40,6 +70,6 @@ services:
       file: monitoring/compose.yaml
       service: monitoring
     build: monitoring
-    container_name: example-service-vm
+    container_name: gpu-runner-service-vm
     labels:
-      idac.service: example-service-vm
+      idac.service: gpu-runner-service-vm

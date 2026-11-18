@@ -1,0 +1,47 @@
+# Example workflow for the DiRAC GPU runner. Copy to .github/workflows/ in your
+# repo, then ask an org admin to add it to the org's `gpu` runner group as
+#   <org>/<repo>/.github/workflows/gpu-benchmark.yml@refs/heads/main
+# Until then, its jobs wait in the queue and never start.
+#
+# Only trusted triggers: this runs code from `main`, never from a pull request.
+# Do not add pull_request, pull_request_target or workflow_run triggers here.
+# Run pull request CI on GitHub-hosted runners in a separate workflow.
+
+name: GPU benchmarks
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time per repo; the GPU lock already serializes across repos.
+concurrency:
+  group: gpu-benchmarks-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on:
+      group: gpu
+      labels: [self-hosted, gpu]
+    # Includes any time spent waiting for the GPU.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e .[benchmarks]   # replace with your project's setup
+
+      - name: Benchmark
+        run: |
+          echo "runner org: $GPU_LOCK_OWNER, waited ${GPU_LOCK_WAIT_SECONDS}s for the GPU, driver $GPU_DRIVER_VERSION"
+          # Replace with your benchmark command. Store the three variables
+          # above with your results.
+          python -m your_benchmarks

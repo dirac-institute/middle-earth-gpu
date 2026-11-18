@@ -1,31 +1,34 @@
-FROM docker.io/library/httpd:2.4
+# GitHub Actions self-hosted runner with a GPU lock, for the DiRAC GPU VM.
+#
+# Based on GitHub's official runner image. Pinned: to upgrade, change the tag
+# here (pick a release at least two weeks old) and `podman compose up -d
+# --build`. The runner also self-updates in place between rebuilds.
+FROM ghcr.io/actions/actions-runner:2.338.2
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip && \
-    rm -rf /var/lib/apt/lists/*
+USER root
 
 ARG SVC_UID
 ARG SVC_GID
 ARG SVC_USER
 
+# Run as the service account from VM.set, so the runner can read and write
+# its registration on the root_squash NFS share. The image's own `runner`
+# user has passwordless sudo; the service account deliberately does not, so
+# jobs cannot install system packages (see DEPLOY.md).
 RUN groupadd -g ${SVC_GID} ${SVC_USER} 2>/dev/null || true && \
-    useradd -u ${SVC_UID} -g ${SVC_GID} -M -s /sbin/nologin ${SVC_USER} 2>/dev/null || true && \
-    mkdir -p /srv/app /srv/static && \
-    chown -R ${SVC_UID}:${SVC_GID} /srv /usr/local/apache2/logs
+    useradd -u ${SVC_UID} -g ${SVC_GID} -M -d /home/runner -s /bin/bash ${SVC_USER} 2>/dev/null || true && \
+    chown -R ${SVC_UID}:${SVC_GID} /home/runner
 
-COPY app/requirements.txt /srv/app/requirements.txt
-RUN pip install --no-cache-dir --break-system-packages -r /srv/app/requirements.txt
+COPY runner/ /opt/gpu-runner/
+RUN chmod 0755 /opt/gpu-runner/*.sh
 
-COPY app/server.py /srv/app/server.py
-COPY app/static/   /srv/static/
+# Job hooks: take the GPU lock before every job and release it after. The
+# completed hook runs even when a job fails or is cancelled.
+ENV HOME=/home/runner \
+    ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/gpu-runner/job-started.sh \
+    ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/gpu-runner/job-completed.sh
 
-COPY apache/httpd.conf /usr/local/apache2/conf/extra/httpd-custom.conf
-RUN sed -i 's/^Listen 80$/#Listen 80/' /usr/local/apache2/conf/httpd.conf && \
-    echo 'Include conf/extra/httpd-custom.conf' >> /usr/local/apache2/conf/httpd.conf
+USER ${SVC_UID}:${SVC_GID}
+WORKDIR /home/runner
 
-COPY start.sh /usr/local/bin/start.sh
-RUN chmod +x /usr/local/bin/start.sh
-
-EXPOSE 8080
-
-CMD ["/usr/local/bin/start.sh"]
+ENTRYPOINT ["/opt/gpu-runner/entrypoint.sh"]

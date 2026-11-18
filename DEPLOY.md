@@ -1,30 +1,38 @@
-# Deploying the Middle-earth service example to a DiRAC VM
+# Deploying the Middle-earth GPU runner
 
-Target: stock Rocky 10 VM on UW DiRAC infrastructure.
+Target: stock Rocky 10 VM on UW DiRAC infrastructure, with an NVIDIA GPU passed
+through to it.
 
-The VM provides a reverse proxy that handles TLS termination and routes
-traffic to your container on port 8080.
+This VM runs GitHub Actions jobs that need the GPU, for two GitHub orgs
+(`dirac-institute` and `lincc-frameworks`). A self-hosted runner can only
+belong to one org, so there are two runner containers. They take turns on the
+GPU: one job at a time, across both orgs.
 
 ```bash
-git clone <this repo> /root/middle-earth-service-example
-cd /root/middle-earth-service-example
+git clone <this repo> /root/middle-earth-gpu-runner
+cd /root/middle-earth-gpu-runner
 sudo ./init.sh
+sudo ./register.sh dirac-institute      # first deploy only; prompts for a token
+sudo ./register.sh lincc-frameworks     # first deploy only; prompts for a token
 podman compose up -d --build
 ```
+
+Before the first `register.sh`, each org needs its runner group set up on
+GitHub; see "GitHub-side setup". Without it, the runners either can't register
+or will accept jobs from the wrong places.
 
 Then verify:
 
 ```bash
-curl http://localhost:8080/api/hello
-# {"message":"Hello from Middle-earth!","service":"example"}
-
-curl http://localhost:8080/
-# (static HTML page)
-
-curl -s http://localhost:9110/metrics | grep -E 'load1 |filesystem_size|source_success'
-# service_vm_load1 ..., one filesystem_size line per local disk filesystem,
-# and service_vm_monitor_source_success{source="..."} 1 for all five sources
+podman ps                                   # three containers, all Up
+podman logs gpu-runner-dirac-institute      # ends with "Listening for Jobs"
+podman logs gpu-runner-lincc-frameworks     # ends with "Listening for Jobs"
+podman exec gpu-runner-dirac-institute nvidia-smi   # the GPU is visible
 ```
+
+Both runners should show as **Idle** in each org's Settings → Actions →
+Runners. Then run a workflow from `examples/gpu-benchmark.yml` (see "Using the
+runner") and check its "Set up runner" step says it acquired the GPU lock.
 
 Then register the VM with the gadget monitor; see "Monitoring" below.
 
@@ -33,71 +41,203 @@ Then register the VM with the gadget monitor; see "Monitoring" below.
 | File | Role |
 |---|---|
 | `/root/VM.set` (not in the repo) | Written by IT when the VM is provisioned. The source of truth for the service account name, uid, and gid. |
-| `init.sh` | Host-level only: reads the service account from `/root/VM.set` and checks it exists on the VM, installs podman + podman-compose, enables `podman-restart.service`, writes `.env`. Idempotent; safe to re-run. |
-| `Dockerfile` | Apache httpd 2.4 + Python 3 + Flask/Gunicorn in one image. Apache serves static files and reverse-proxies `/api/` to Gunicorn. |
-| `start.sh` | Container entrypoint: starts Gunicorn in the background, then runs Apache in the foreground. |
-| `compose.yaml` | Two services: `app` (Apache + Gunicorn in one container on port 8080) and `monitoring` (the VM's CPU, memory and disks on port 9110). |
-| `app/server.py` | Flask application with one API endpoint (`GET /api/hello`). |
-| `app/static/index.html` | Static HTML page served directly by Apache. |
-| `apache/httpd.conf` | Apache virtual host: plain HTTP on 8080, static files from `/srv/static`, `/api/` proxied to Gunicorn on `127.0.0.1:8000`. |
-| `start.sh` | Container entrypoint: starts Gunicorn in the background, then runs Apache in the foreground. |
-| `monitoring/` | Service VM monitor, copied unchanged from [middle-earth-gadget-monitor](https://github.com/dirac-institute/middle-earth-gadget-monitor). Its image and compose settings (`monitoring/compose.yaml`, pulled into `compose.yaml` with `extends`). See `monitoring/README.md`. |
-| `dev-startup.sh` | Local development helper for macOS: runs `docker compose` as your own uid/gid, since a laptop has no `VM.set`. |
-| `SECRETS.md` | How secrets are stored, the NFS ownership model, and permissions. |
+| `init.sh` | Host-level only: checks the service account from `/root/VM.set`, installs podman, podman-compose and the NVIDIA Container Toolkit, generates the CDI spec that hands the GPU to containers, enables GPU persistence mode and `podman-restart.service`, creates the GPU lock directory, reports which orgs are registered, writes `.env`. Idempotent; safe to re-run. |
+| `register.sh` | One-time, per org: registers a runner with GitHub using a short-lived token, and saves its credentials to `/service/shire` as the service account. |
+| `Dockerfile` | GitHub's official runner image (pinned), run as the service account, with the GPU lock hooks. |
+| `runner/entrypoint.sh` | Container entrypoint: links the org's registration into the runner, clears any lock this runner left behind, starts the runner. |
+| `runner/job-started.sh` | Runs before every job: waits for the GPU lock, checks the GPU is idle, records the GPU's state. |
+| `runner/job-completed.sh` | Runs after every job, even failed or cancelled ones: releases the lock. |
+| `runner/gpu-lock-lib.sh` | The lock itself, shared by the scripts above. |
+| `runner/register-in-container.sh` | Used by `register.sh`; runs GitHub's `config.sh` inside the image. |
+| `compose.yaml` | One runner service per org, plus `monitoring` (the VM's CPU, memory and disks on port 9110). |
+| `monitoring/` | Service VM monitor, copied unchanged from [middle-earth-gadget-monitor](https://github.com/dirac-institute/middle-earth-gadget-monitor). |
+| `examples/gpu-benchmark.yml` | A workflow to copy into a repo that wants to use the GPU. |
+| `SECRETS.md` | What is secret here, where it lives, and who it trusts. |
 
 ## Architecture
 
 ```
-                   ┌──────────────────────────────────────────┐
-  VM reverse  ──►  │  container                                │
-  proxy :8080      │    apache (port 8080)                     │
-                   │      /         → static files             │
-                   │      /api/*    → gunicorn (port 8000)     │
-                   └──────────────────────────────────────────┘
-
-  gadget monitor   ┌──────────────────────────────────────────┐
-  (polls every ──► │  monitoring container (port 9110)         │
-  minute) :9110    │    /metrics → this VM's CPU, memory,      │
-                   │               disks, load (VM's / at      │
-                   │               /host, read-only)           │
-                   └──────────────────────────────────────────┘
+                 ┌──────────────── GPU VM ─────────────────────────────────┐
+  GitHub    ◄────┤ runner-dirac-institute   ─┐                             │
+  (dirac-        │   registration: /service/ │                             │
+   institute)    │   shire/.../dirac-institute├─► /gpu-lock ─► one job at   │
+                 │                            │   (local dir)  a time on    │
+  GitHub    ◄────┤ runner-lincc-frameworks  ─┘                 the GPU      │
+  (lincc-        │   registration: /service/shire/.../lincc-frameworks      │
+   frameworks)   │                                                          │
+                 │ monitoring (port 9110) ◄── gadget monitor                │
+                 └──────────────────────────────────────────────────────────┘
 ```
+
+Runners only connect *out* to GitHub over HTTPS and long-poll for jobs.
+Nothing connects in to them.
 
 ## Design choices
 
-**One container, two processes.** Apache and Gunicorn run in the same
-container. Apache handles static files and reverse-proxies API requests to
-Gunicorn on an internal port. The `start.sh` entrypoint launches Gunicorn in
-the background and runs Apache in the foreground as PID 1.
+**One persistent runner per org, as the service account.** Each runner keeps
+its registration across restarts, on the root_squash NFS share where only the
+service account can read it. This is the simplest setup that works, and it
+relies on a trust decision recorded in `SECRETS.md`: everyone who can get code
+run here is already trusted with this VM.
 
-**Containers for everything.** The only things `init.sh` does on the host are
-check the service account and install podman. The service account, SSH, and
-SELinux are provisioned by IT.
-All application logic, dependencies, and configuration live inside the
-container image. This means a deployment is fully reproducible from the repo
-checkout.
+**GitHub decides which code runs here, not this repo.** The repos are public
+with open pull requests, and a pull request can change any workflow file, so
+nothing in a workflow file can keep untrusted code off this VM. GitHub's runner
+group settings can: they accept jobs only from listed workflow files on
+`main`. See "GitHub-side setup".
 
-**Secrets are bind-mounted, never baked in.** Any secrets the service needs
-are mounted read-only into the container at runtime. See `SECRETS.md` for the
-full story.
+**A lock directory, not a scheduler.** `mkdir` is atomic, so whichever runner
+creates `/gpu-lock/held` first holds the GPU, and the other waits. There is no
+queue or fairness between orgs; at this VM's load, first come first served is
+enough.
 
-**Service account with fixed uid/gid.** The service account name, uid, and gid
-come from IT's `/root/VM.set` on the VM, and flow through `.env` into the
-Dockerfile and compose.yaml with no fallback defaults. Nothing about the
-account is committed to the repo, so the same checkout deploys to any VM.
-The uid/gid must match the owner of secrets on the production NFS share, which
-is exported with `root_squash` — only that uid can read mode-0600 secrets. See
-`SECRETS.md` for details on why this matters.
+**Benchmarks never run on a busy GPU.** After taking the lock, a job also
+checks the GPU has no processes and almost no memory in use, and fails loudly
+if not, rather than producing a misleading timing.
 
-**Port 8080, localhost only.** The container listens on port 8080 and the
-compose file binds it to `127.0.0.1:8080`. The VM's reverse proxy handles
-TLS termination and routes external traffic to this port. The one
-exception is the monitoring container's port 9110 (see "Monitoring").
+**No container engine inside the runners.** No Docker or podman socket is
+mounted, so jobs cannot start containers. A job with the host's container
+socket would effectively be root on the VM.
 
-**Monitoring is part of every service.** Each service VM runs the same
-small monitor container, so the gadget monitor can graph its CPU, memory,
-disks and load. It is copied into the repo rather than written per service,
-and every service gets it with no changes of its own.
+## GitHub-side setup
+
+This half of the configuration lives in each org's settings on GitHub, not in
+this repo. Do it in **both** orgs. You need to be an org owner or have the
+"Manage organization runners and runner groups" permission in that org.
+
+**1. A runner group called `gpu`** (Settings → Actions → Runner groups → New
+runner group). Creating groups needs the GitHub Team plan.
+
+- **Repository access:** *Selected repositories*, listing only the repos that
+  need the GPU.
+- **Allow public repositories:** on. Off is the default; these repos are
+  public.
+- **Workflow access:** *Selected workflows*, listing each workflow file that
+  may use the GPU, pinned to `main` with a fully qualified ref:
+
+  ```
+  dirac-institute/some-repo/.github/workflows/gpu-benchmark.yml@refs/heads/main
+  ```
+
+  A pull request from a fork runs at a pull-request ref, so it never matches
+  this list: its jobs wait in the queue and never reach the VM, even if a
+  maintainer approves the run. Only jobs defined directly in a listed file
+  can use the group.
+
+**2. Only list workflows with trusted triggers:** `push` (to `main`),
+`workflow_dispatch`, `schedule`, `release`. Never list a workflow that uses
+`pull_request_target` or `workflow_run`: those run from `main`, so they pass
+the check above, and if they check out a pull request's code they would run it
+here.
+
+**3. Protect `main`** in each repo: require a pull request review before
+merging. Everything that lands on `main` in a listed repo (the workflow, and
+any tests, scripts or build files it runs) will run on this VM. Consider a
+CODEOWNERS entry for `.github/workflows/`.
+
+**4. Run pull request CI on GitHub-hosted runners**, not here. They are free
+for public repos, and contributors still get fast feedback.
+
+Keep this table current; a successor may not administer both orgs.
+
+| Org | Runner group | Who can change its settings |
+|---|---|---|
+| `dirac-institute` | `gpu` | TODO |
+| `lincc-frameworks` | `gpu` | TODO |
+
+## Using the runner
+
+Copy `examples/gpu-benchmark.yml` into a repo's `.github/workflows/`, add that
+file to the org's `gpu` runner group (step 1 above), and merge it to `main`. A
+job reaches this VM with:
+
+```yaml
+runs-on:
+  group: gpu
+  labels: [self-hosted, gpu]
+```
+
+What a job gets:
+
+- **The GPU**, with the driver's libraries injected by CDI. The CUDA *runtime*
+  is not in the image; get it the usual way for your stack (PyTorch and JAX
+  wheels bundle it, or use conda).
+- **Ubuntu 24.04 userspace**, from GitHub's runner image. `actions/setup-python`
+  and similar actions work and cache downloads between jobs.
+- **Exclusive use of the GPU** for the whole job.
+- **Environment variables** for recording with results: `GPU_LOCK_OWNER`
+  (which org's runner), `GPU_LOCK_WAIT_SECONDS`, `GPU_DRIVER_VERSION`.
+
+What a job does not get:
+
+- **No `sudo`**, so no system packages. Add what jobs commonly need to the
+  `Dockerfile` instead.
+- **No containers**: no Docker or podman inside jobs (see "Design choices").
+- **A clean machine.** Runners are persistent: files a job leaves outside its
+  workspace (for example in `$HOME`) are still there for the next job, until
+  the container is recreated.
+
+## The GPU lock
+
+Every job, from either org, takes the lock before its first step and releases
+it after its last, even when it fails or is cancelled. In the job log:
+
+- **"Set up runner"** shows the wait (`GPU in use by 'lincc-frameworks' (...)`),
+  the idle check, and the GPU's clocks, temperature and power.
+- **"Complete runner"** shows the release.
+
+Waiting counts toward the job's `timeout-minutes` (default 6 hours), because
+GitHub considers the job started. Tunables, set as `environment:` entries on
+the runner services in `compose.yaml`:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GPU_LOCK_MAX_WAIT_SECONDS` | 10800 | Fail the job after waiting this long. |
+| `GPU_LOCK_STALE_SECONDS` | 86400 | Treat the *other* runner's lock as abandoned after this long. |
+| `GPU_IDLE_MAX_MIB` | 512 | "Idle" means at most this much GPU memory in use. |
+| `GPU_IDLE_GRACE_SECONDS` | 60 | How long to wait for the GPU to go idle before failing. |
+
+A lock left behind by a crash clears itself: a runner releases its own lock
+when its container starts, and reclaims its own lock at its next job.
+
+To see who holds the GPU right now:
+
+```bash
+cat /var/lib/middle-earth-gpu-runner/gpu-lock/held/owner \
+    /var/lib/middle-earth-gpu-runner/gpu-lock/held/info
+```
+
+## Benchmark reliability
+
+The runners make the GPU exclusive and check it is idle. Some noise is outside
+their control:
+
+- **CPU timings are shared.** The GPU belongs to this VM alone, but the CPUs
+  are shared with every other VM on the physical machine. Anything that times
+  CPU work, data loading or host-to-device copies picks up noise from them.
+  Run a fixed reference benchmark regularly and watch for shifts.
+- **Clocks.** GPU boost clocks vary with temperature and power, and that
+  variation lands in timings. Locking them (`nvidia-smi -lgc <min>,<max>`)
+  makes runs more comparable at the cost of peak speed. This is a deliberate
+  decision for the benchmark's owners, so `init.sh` does not do it. If you
+  decide to, it needs root and does not survive a reboot, so add it to
+  `init.sh` as a systemd unit and record the decision here.
+- **Persistence mode** is enabled by `init.sh` (`nvidia-persistenced`), so the
+  first job after an idle period doesn't pay for driver startup.
+- **Record the environment with every result:** at least the variables above,
+  plus `nvidia-smi` output, which "Set up runner" prints.
+
+## GPU driver
+
+The NVIDIA driver must be installed on the VM before `init.sh`; it checks for
+`nvidia-smi` and stops if it's missing. It is not installed by `init.sh`
+because it is tied to the kernel: a kernel update can break it, and fixing it
+needs a person.
+
+TODO: record here how the driver was installed on this VM (package source,
+version, and what to do after a kernel update), so the next person can repeat
+it. After any driver change, re-run `sudo ./init.sh`: the CDI spec it writes
+names the driver's files by version.
 
 ## Service identity: `/root/VM.set`
 
@@ -125,23 +265,16 @@ ask PACS via help-astro@uw.edu rather than writing your own.
 ## Per-host configuration: `.env`
 
 `init.sh` writes the account to `.env` as `SVC_USER`, `SVC_UID` and
-`SVC_GID`, along with the host's own FQDN (`SVC_FQDN`), which compose.yaml
-uses as the Apache `ServerName` and container hostname. Podman compose reads
-`.env` automatically:
+`SVC_GID`, along with the host's FQDN and short name (`SVC_FQDN`,
+`SVC_SHORTNAME`; runners are named `<short name>-<org>`), the service's
+directory on `/service/shire` (`SVC_SHIRE_DIR`) and the GPU lock directory
+(`GPU_LOCK_DIR`). Podman compose reads `.env` automatically.
 
-```
-# Written by init.sh on every run; don't edit.
-SVC_USER=astro-myservice
-SVC_UID=NNNNNNN
-SVC_GID=NNNNNNNNNN
-SVC_FQDN=myservice.astro.washington.edu
-```
-
-The Dockerfile and compose.yaml consume these values via build args and
-environment variables with no hardcoded defaults, so running `podman compose`
-without a populated `.env` fails on the missing variables. `.env` is
-gitignored and derived: `init.sh` rewrites it on every run. Re-run `init.sh`
-rather than editing it, and never copy it between hosts.
+The Dockerfile and compose.yaml consume these values with no hardcoded
+defaults, so running `podman compose` without a populated `.env` fails on the
+missing variables. `.env` is gitignored and derived: `init.sh` rewrites it on
+every run. Re-run `init.sh` rather than editing it, and never copy it between
+hosts.
 
 ## VM infrastructure context
 
@@ -152,25 +285,46 @@ Key things to know:
   format as `docker compose`. Install it from EPEL; `init.sh` handles this.
 - **podman-restart.service** must be enabled for `restart: unless-stopped` to
   survive a VM reboot. `init.sh` enables it.
-- **The VM's reverse proxy** handles TLS termination and firewall rules.
-  The container listens on `127.0.0.1:8080` and does not need to manage TLS or
-  open ports itself.
+- **The VM's reverse proxy** handles TLS termination and firewall rules for
+  services that serve web traffic. The runners serve nothing: they only make
+  outbound HTTPS connections to GitHub, so they need no ports and no proxy
+  route.
 - **Service accounts** exist because the NFS share uses `root_squash`. The
   container process must run as the uid that owns the secrets on the share.
   IT creates this account on the VM and names it in `/root/VM.set`;
   `init.sh` checks the two agree and exits if they do not.
+- **GPU containers** use CDI: `init.sh` installs the NVIDIA Container
+  Toolkit and writes `/etc/cdi/nvidia.yaml`, and `compose.yaml` asks for the
+  device `nvidia.com/gpu=all`.
 
-## Rollout to another VM
+## Adding an org
 
-The procedure above is the whole deployment. On a new VM, confirm:
+1. Do the "GitHub-side setup" in the new org.
+2. In `compose.yaml`, copy a runner service block and change the org name in
+   its service name, `container_name`, `RUNNER_ORG`, `LOCK_OWNER`, volume path
+   and label.
+3. Add the org to `ORGS` in `init.sh`.
+4. `sudo ./init.sh && sudo ./register.sh <org> && podman compose up -d --build`
 
-- `/root/VM.set` exists and names a service account that exists on the VM
-  (IT provisions both).
-- The VM has network access to pull container base images.
-- For production: if the service has secrets, `/service/shire` is mounted and
-  the secrets directory is populated (see `SECRETS.md`).
-- For production: the VM is listed in the gadget monitor's
-  `config/service_vms.toml` (see "Monitoring").
+More runners share the same GPU lock, so this adds no GPU contention, only
+more queues waiting for it.
+
+## Upgrading the runner
+
+GitHub requires self-hosted runners to stay reasonably current. The runner
+updates itself in place when GitHub releases a new version, but a rebuilt
+container starts again from the image's version. Every few months, change the
+tag in the `Dockerfile` to a release at least two weeks old
+(https://github.com/actions/runner/releases) and `podman compose up -d
+--build`. Registrations are unaffected.
+
+## Removing a runner, or if its credentials leak
+
+In the org on GitHub, Settings → Actions → Runners, remove the runner. Its
+credentials stop working immediately. Then delete
+`$SVC_SHIRE_DIR/runner-state/<org>/` as the service account, and either
+re-register (`sudo ./register.sh <org>`) or remove its block from
+`compose.yaml`.
 
 ## Monitoring
 
@@ -186,7 +340,7 @@ in a service repo. To update it, copy the folder over again from the gadget
 monitor's repo. The only per-service lines are in `compose.yaml`:
 `container_name` (any name unique on the VM) and `labels`.
 
-**Port 9110 is reachable from anywhere.** Unlike 8080, it is published
+**Port 9110 is reachable from anywhere.** It is the only published port, and it is
 on every interface and does not go through the VM's reverse proxy or TLS,
 because the gadget monitor connects to it directly. Podman DNATs the port, so
 firewalld does not need to open it. Anyone who can reach the VM can read
@@ -243,4 +397,5 @@ entry. Otherwise the dashboard shows it as down.
 ## Boot persistence
 
 `restart: unless-stopped` only survives reboot if `podman-restart.service` is
-enabled, which `init.sh` does.
+enabled, which `init.sh` does. A job that was running at reboot fails on
+GitHub; its GPU lock is cleared when its runner restarts.
