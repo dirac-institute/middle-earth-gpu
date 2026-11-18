@@ -26,7 +26,7 @@ die() { echo "FATAL: $*" >&2; exit 1; }
 [ $# -eq 1 ] || die "usage: sudo ./register.sh <org>   (e.g. dirac-institute)"
 ORG="$1"
 [[ "$ORG" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]] || die "not a GitHub org name: '$ORG'"
-grep -q "runner-state/$ORG:" "$REPO_DIR/compose.yaml" \
+grep -q "^[^#]*runner-state/$ORG:" "$REPO_DIR/compose.yaml" \
     || die "compose.yaml has no runner service for '$ORG'; add one first (DEPLOY.md, \"Adding an org\")"
 
 [ -r "$REPO_DIR/.env" ] || die ".env not found: run sudo ./init.sh first"

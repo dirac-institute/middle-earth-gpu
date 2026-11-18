@@ -27,7 +27,8 @@ SHIRE_DIR=/service/shire
 # Local (not NFS) directory shared by both runner containers for the GPU lock.
 LOCK_DIR=/var/lib/middle-earth-gpu-runner/gpu-lock
 # One directory per GitHub org this VM serves. Must match compose.yaml.
-ORGS=(dirac-institute lincc-frameworks)
+# lincc-frameworks is commented out in compose.yaml until it is set up.
+ORGS=(dirac-institute)
 
 WARNINGS=0
 warn() { echo "WARNING: $*" >&2; WARNINGS=$((WARNINGS + 1)); }
