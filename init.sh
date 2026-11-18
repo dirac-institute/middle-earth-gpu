@@ -104,18 +104,22 @@ nvidia-smi --query-gpu=name,driver_version --format=csv,noheader \
     || die "nvidia-smi is installed but cannot talk to the GPU; is the driver loaded?"
 
 # NVIDIA Container Toolkit, so podman can hand the GPU to containers via CDI.
+# It comes from NVIDIA's CUDA repo, which PACS configures alongside the
+# driver (/etc/yum.repos.d/PACS/cuda-rhel10.repo); no extra repo is added.
 if ! command -v nvidia-ctk >/dev/null; then
-    curl -fsSL -o /etc/yum.repos.d/nvidia-container-toolkit.repo \
-        https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
-    dnf install -y nvidia-container-toolkit
+    dnf install -y nvidia-container-toolkit \
+        || die "could not install nvidia-container-toolkit; is NVIDIA's CUDA repo configured? (DEPLOY.md, \"GPU driver\")"
 else
     echo "nvidia-container-toolkit already installed"
 fi
 # The CDI spec lists driver files by version, so regenerate it on every run;
 # after a driver update, re-running init.sh is enough.
 mkdir -p /etc/cdi
-nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml >/dev/null
-nvidia-ctk cdi list | grep -q 'nvidia.com/gpu=all' \
+# It logs a line per driver file it looks for (many "not found" warnings for
+# display libraries a headless VM doesn't have); show them only on failure.
+cdi_log="$(nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml 2>&1)" \
+    || { echo "$cdi_log" >&2; die "nvidia-ctk cdi generate failed"; }
+nvidia-ctk cdi list 2>/dev/null | grep -q 'nvidia.com/gpu=all' \
     || die "CDI spec has no nvidia.com/gpu=all device; check 'nvidia-ctk cdi list'"
 echo "  ok   CDI spec written to /etc/cdi/nvidia.yaml"
 
