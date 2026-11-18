@@ -17,49 +17,63 @@ checking on the real VM. Delete this file once everything here is done.
   "GitHub-side setup"). They are what keeps untrusted pull request code off
   this VM.
 
-## To verify, roughly in order
+## Status (2026-11-18, on `vga`)
 
-1. **Paths and names.** ~~`SHIRE_DIR`~~ (done: `/service/shire`, the
-   service directory) and ~~the TODO in "GPU driver"~~ (done). Still to do:
-   fill in the TODO table in DEPLOY.md, "GitHub-side setup".
-2. **`init.sh` on Rocky 10:** the NVIDIA Container Toolkit repo URL and
-   install; `nvidia-ctk cdi list` output contains `nvidia.com/gpu=all`;
-   `nvidia-persistenced.service` exists under that name; `install -d -o -g -m`
-   fixes ownership on an existing directory.
-3. **The image.** `ghcr.io/actions/actions-runner:2.338.2` exists (consider
-   pinning by digest too). As the service uid (not the image's uid 1001):
-   `config.sh` runs, and `run.sh` starts. Self-update can write to
-   `/home/runner`.
-4. **podman-compose (the version from EPEL):** the `x-runner` anchor with
-   `<<:` merge keys; `devices: [nvidia.com/gpu=all]` reaching podman as a CDI
-   device; two services building the same image tag; `extends` for
-   `monitoring` still working alongside them.
-5. **SELinux and NFS.** The runner-state mounts are read-write NFS bind mounts
-   with no relabel; the example only mounted NFS read-only. If denied, check
-   `getsebool virt_use_nfs` / `container_use_nfs`. That is IT's setting:
-   ask, don't flip it silently. The lock directory uses `:z` (local disk).
-6. **`register.sh` end to end** for one org with a real token; the three files
-   land in `runner-state/<org>/` as 0600, owned by the service uid; the
-   runner shows up in the org's `middle-earth-gpu` group with labels `self-hosted, Linux,
-   X64, gpu`.
-7. **Hooks.** The hook variables from the image's `ENV` reach the runner's
-   worker; "Set up runner" / "Complete runner" steps appear in job logs;
-   writing to `$GITHUB_ENV` from the started hook works (the job sees
-   `GPU_LOCK_OWNER` etc.); `nvidia-smi` is present inside the container.
-8. **The idle check.** Whether `nvidia-smi --query-compute-apps` inside one
-   container lists processes started in the *other* container. If it doesn't,
-   the memory threshold still catches a busy GPU; adjust `GPU_IDLE_MAX_MIB` to
-   the idle baseline you actually see.
-9. **The lock, deliberately:**
-   - Start jobs in both orgs at once: one waits, logs who holds the GPU, then
-     runs after the other finishes.
-   - Cancel a running job: the lock is released.
-   - `podman kill` a runner mid-job, then `podman compose up -d`: its lock is
-     cleared at startup.
-   - Reboot the VM mid-job: both runners come back and the lock is clear.
-10. **GitHub-side restrictions, deliberately:** from a fork, open a pull
-    request that adds a workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`.
-    Its job must stay queued and never reach the VM, even after a maintainer
-    approves the run.
-11. **The DEPLOY.md verification steps and the gadget monitor registration**,
-    as in the example.
+Deployed for **dirac-institute only**. The lincc-frameworks runner is
+commented out in `compose.yaml` and left out of `ORGS` in `init.sh` until its
+runner group exists.
+
+### Done
+
+- **Paths and names.** `SHIRE_DIR=/service/shire` (the service directory).
+  "GPU driver" in DEPLOY.md records how the driver was installed.
+- **`init.sh` on Rocky 10.** The container toolkit comes from the CUDA repo
+  PACS configures; the CDI spec has `nvidia.com/gpu=all`;
+  `nvidia-persistenced` is enabled; `install -d -o -g -m` fixes an existing
+  directory.
+- **The image.** Pinned by tag and digest. As the service uid: `config.sh`
+  and `run.sh` work, `/home/runner` is writable, no sudo, GPU visible.
+- **podman-compose 1.5.0 (EPEL).** `<<:` merge keys, the CDI device and
+  `extends` all work.
+- **SELinux and NFS.** No AVC denials from registering or running.
+  SELinux is Permissive on this VM (accepted); `virt_use_nfs` is on.
+- **`register.sh`** for dirac-institute: three 0600 files owned by
+  `astro-vga`, unreadable by root, runner `vga-dirac-institute` in group
+  `middle-earth-gpu`.
+- **Hooks.** "Set up runner" and "Complete runner" run; `GPU_LOCK_*` and
+  `GPU_DRIVER_VERSION` reach the job; nvidia-smi works in jobs.
+- **The lock:** released on cancel (and no processes left over);
+  `podman kill` mid-job leaves it, and the entrypoint clears it on restart
+  (see DEPLOY.md, "Restarting a runner", for GitHub's side of that).
+- **GitHub-side:** jobs stay queued while the repo isn't selected or public
+  repos aren't allowed (seen by accident while setting up).
+- **Smoke test workflow** (`.github/workflows/gpu-smoke-test.yml`) is on
+  dirac-institute's runner group list and passes.
+- **Monitoring container** answers locally on port 9110, every source `1`.
+
+### Still to do
+
+1. **Fill in the "Who can change its settings" table** in DEPLOY.md,
+   "GitHub-side setup".
+2. **Busy GPU:** with a CUDA process holding GPU memory on the host, a job
+   must fail in "Set up runner" with "The GPU is not idle".
+3. **Reboot the VM mid-job:** the runner comes back, the lock is clear, and
+   how long GitHub keeps it unavailable (DEPLOY.md, "Restarting a runner").
+4. **Fork pull request:** from a fork, open a pull request that adds a
+   workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`. Its
+   job must stay queued and never reach the VM, even after a maintainer
+   approves the run.
+5. **Monitoring from outside:** `curl -s
+   http://vga.astro.washington.edu:9110/metrics | grep source_success` from
+   another machine (if it can't connect, that is a firewall question for
+   IT), then the gadget monitor PR (DEPLOY.md, "Monitoring").
+6. **lincc-frameworks**, once its `middle-earth-gpu` runner group exists:
+   uncomment its block in `compose.yaml`, add it back to `ORGS` in
+   `init.sh`, register it (DEPLOY.md, "Adding an org"), then:
+   - **Contention:** start jobs in both orgs at once; one waits, logs who
+     holds the GPU, then runs after the other finishes.
+   - **Idle check across containers:** whether `nvidia-smi
+     --query-compute-apps` in one container lists processes started in the
+     other. If not, the memory threshold still catches a busy GPU; set
+     `GPU_IDLE_MAX_MIB` from the idle baseline (0 MiB on this L4 so far).
+7. **Delete this file** once everything above is done.

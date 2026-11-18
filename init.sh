@@ -2,7 +2,7 @@
 # Host initialization for the Middle-earth GPU runner VM. Run as root; safe to
 # re-run.
 #
-#   git clone <this repo> && cd middle-earth-gpu-runner
+#   git clone git@github.com:dirac-institute/middle-earth-gpu.git && cd middle-earth-gpu
 #   sudo ./init.sh
 #   sudo ./register.sh <org>        # once per GitHub org; see DEPLOY.md
 #   podman compose up -d --build
