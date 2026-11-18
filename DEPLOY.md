@@ -234,10 +234,28 @@ The NVIDIA driver must be installed on the VM before `init.sh`; it checks for
 because it is tied to the kernel: a kernel update can break it, and fixing it
 needs a person.
 
-TODO: record here how the driver was installed on this VM (package source,
-version, and what to do after a kernel update), so the next person can repeat
-it. After any driver change, re-run `sudo ./init.sh`: the CDI spec it writes
-names the driver's files by version.
+On this VM (`vga`, an NVIDIA L4), the driver was installed on 2026-11-17
+from NVIDIA's CUDA repo, which PACS configures as
+`/etc/yum.repos.d/PACS/cuda-rhel10.repo`:
+
+```bash
+dnf install kernel-devel-matched kernel-headers   # DKMS builds against these
+dnf install nvidia-driver-cuda kmod-nvidia-open-dkms
+```
+
+That is driver 620.70.06, the **open** kernel module, built by DKMS. The same
+repo also provides the CUDA toolkit (installed on the host for debugging, not
+used by the runners) and `nvidia-container-toolkit`, which `init.sh` installs.
+
+**After a kernel update**, DKMS rebuilds the module at boot, provided the
+matching `kernel-devel` is installed (`kernel-devel-matched` pulls it in).
+Check with `dkms status` and `nvidia-smi`. If the build failed, install the
+matching `kernel-devel` and run `dkms autoinstall`, or boot the previous
+kernel.
+
+**After any driver change**, re-run `sudo ./init.sh`: the CDI spec it writes
+names the driver's files by version. Then `podman compose up -d
+--force-recreate` so the runners pick up the new spec.
 
 ## Service identity: `/root/VM.set`
 
@@ -314,9 +332,18 @@ more queues waiting for it.
 GitHub requires self-hosted runners to stay reasonably current. The runner
 updates itself in place when GitHub releases a new version, but a rebuilt
 container starts again from the image's version. Every few months, change the
-tag in the `Dockerfile` to a release at least two weeks old
+`FROM` line in the `Dockerfile` to a newer release
 (https://github.com/actions/runner/releases) and `podman compose up -d
 --build`. Registrations are unaffected.
+
+The `FROM` line pins both the tag and the digest of its x86_64 image, because
+GitHub re-pushes existing tags. To get the digest for a tag, for example
+`2.338.2`:
+
+```bash
+podman pull ghcr.io/actions/actions-runner:2.338.2
+podman image inspect --format '{{.Digest}}' ghcr.io/actions/actions-runner:2.338.2
+```
 
 ## Removing a runner, or if its credentials leak
 

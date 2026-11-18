@@ -1,3 +1,7 @@
-secrets/
 # Written per-host by init.sh; must never be shared between hosts.
 .env
+# Runner registrations live on /service/shire, never in the repo.
+.runner
+.credentials
+.credentials_rsaparams
+runner-state/

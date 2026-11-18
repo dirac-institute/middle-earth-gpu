@@ -19,9 +19,9 @@ checking on the real VM. Delete this file once everything here is done.
 
 ## To verify, roughly in order
 
-1. **Paths and names.** `SHIRE_DIR` at the top of `init.sh` is a guess
-   (`/service/shire/gpu-runner`); confirm with PACS. Fill in the TODO table in
-   DEPLOY.md, "GitHub-side setup", and the TODO in "GPU driver".
+1. **Paths and names.** ~~`SHIRE_DIR`~~ (done: `/service/shire`, the
+   service directory) and ~~the TODO in "GPU driver"~~ (done). Still to do:
+   fill in the TODO table in DEPLOY.md, "GitHub-side setup".
 2. **`init.sh` on Rocky 10:** the NVIDIA Container Toolkit repo URL and
    install; `nvidia-ctk cdi list` output contains `nvidia.com/gpu=all`;
    `nvidia-persistenced.service` exists under that name; `install -d -o -g -m`
