@@ -1,0 +1,51 @@
+# Checks a deployed GPU runner end to end, without any project code: the job
+# reaches the VM, the GPU lock hooks run, and the GPU is visible. Run it by
+# hand after deploying (Actions → GPU smoke test → Run workflow).
+#
+# It must be listed in the org's `middle-earth-gpu` runner group as
+#   dirac-institute/middle-earth-gpu/.github/workflows/gpu-smoke-test.yml@refs/heads/main
+#
+# Manual trigger only. Do not add pull_request, pull_request_target or
+# workflow_run triggers (DEPLOY.md, "GitHub-side setup").
+
+name: GPU smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      hold_seconds:
+        description: "How long to hold the GPU lock (for testing the lock by hand)"
+        default: "0"
+
+permissions: {}
+
+jobs:
+  smoke:
+    runs-on:
+      group: middle-earth-gpu
+      labels: [self-hosted, gpu]
+    timeout-minutes: 60
+    steps:
+      - name: Variables from the job-started hook
+        run: |
+          echo "GPU_LOCK_OWNER=$GPU_LOCK_OWNER"
+          echo "GPU_LOCK_WAIT_SECONDS=$GPU_LOCK_WAIT_SECONDS"
+          echo "GPU_DRIVER_VERSION=$GPU_DRIVER_VERSION"
+          test -n "$GPU_LOCK_OWNER" && test -n "$GPU_DRIVER_VERSION"
+
+      - name: GPU and lock
+        run: |
+          nvidia-smi
+          cat /gpu-lock/held/owner /gpu-lock/held/info
+
+      - name: No container engine or sudo
+        run: |
+          ! test -S /var/run/docker.sock
+          ! sudo -n true
+
+      - name: Hold the GPU
+        env:
+          HOLD: ${{ inputs.hold_seconds }}
+        run: |
+          [[ "$HOLD" =~ ^[0-9]+$ ]] || { echo "hold_seconds must be a number"; exit 1; }
+          sleep "$HOLD"
