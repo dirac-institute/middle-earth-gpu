@@ -105,7 +105,7 @@ This half of the configuration lives in each org's settings on GitHub, not in
 this repo. Do it in **both** orgs. You need to be an org owner or have the
 "Manage organization runners and runner groups" permission in that org.
 
-**1. A runner group called `gpu`** (Settings → Actions → Runner groups → New
+**1. A runner group called `middle-earth-gpu`** (Settings → Actions → Runner groups → New
 runner group). Creating groups needs the GitHub Team plan.
 
 - **Repository access:** *Selected repositories*, listing only the repos that
@@ -142,18 +142,18 @@ Keep this table current; a successor may not administer both orgs.
 
 | Org | Runner group | Who can change its settings |
 |---|---|---|
-| `dirac-institute` | `gpu` | TODO |
-| `lincc-frameworks` | `gpu` | TODO |
+| `dirac-institute` | `middle-earth-gpu` | TODO |
+| `lincc-frameworks` | `middle-earth-gpu` | TODO |
 
 ## Using the runner
 
 Copy `examples/gpu-benchmark.yml` into a repo's `.github/workflows/`, add that
-file to the org's `gpu` runner group (step 1 above), and merge it to `main`. A
+file to the org's `middle-earth-gpu` runner group (step 1 above), and merge it to `main`. A
 job reaches this VM with:
 
 ```yaml
 runs-on:
-  group: gpu
+  group: middle-earth-gpu
   labels: [self-hosted, gpu]
 ```
 

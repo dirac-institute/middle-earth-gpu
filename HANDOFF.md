@@ -40,7 +40,7 @@ checking on the real VM. Delete this file once everything here is done.
    ask, don't flip it silently. The lock directory uses `:z` (local disk).
 6. **`register.sh` end to end** for one org with a real token; the three files
    land in `runner-state/<org>/` as 0600, owned by the service uid; the
-   runner shows up in the org's `gpu` group with labels `self-hosted, Linux,
+   runner shows up in the org's `middle-earth-gpu` group with labels `self-hosted, Linux,
    X64, gpu`.
 7. **Hooks.** The hook variables from the image's `ENV` reach the runner's
    worker; "Set up runner" / "Complete runner" steps appear in job logs;
@@ -58,7 +58,7 @@ checking on the real VM. Delete this file once everything here is done.
      cleared at startup.
    - Reboot the VM mid-job: both runners come back and the lock is clear.
 10. **GitHub-side restrictions, deliberately:** from a fork, open a pull
-    request that adds a workflow with `runs-on: { group: gpu, labels: [gpu] }`.
+    request that adds a workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`.
     Its job must stay queued and never reach the VM, even after a maintainer
     approves the run.
 11. **The DEPLOY.md verification steps and the gadget monitor registration**,
