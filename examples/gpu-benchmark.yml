@@ -1,5 +1,5 @@
 # Example workflow for the DiRAC GPU runner. Copy to .github/workflows/ in your
-# repo, then ask an org admin to add it to the org's `gpu` runner group as
+# repo, then ask an org admin to add it to the org's `middle-earth-gpu` runner group as
 #   <org>/<repo>/.github/workflows/gpu-benchmark.yml@refs/heads/main
 # Until then, its jobs wait in the queue and never start.
 #
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   benchmark:
     runs-on:
-      group: gpu
+      group: middle-earth-gpu
       labels: [self-hosted, gpu]
     # Includes any time spent waiting for the GPU.
     timeout-minutes: 240

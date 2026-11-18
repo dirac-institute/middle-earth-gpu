@@ -65,7 +65,7 @@ hardcoded defaults.
 
 Read this before giving anyone write access to a repo that uses this runner.
 
-1. **Merging to `main` in a repo whose workflow is on a `gpu` runner group's
+1. **Merging to `main` in a repo whose workflow is on a `middle-earth-gpu` runner group's
    allowlist is equivalent to running code on this VM as the service
    account.** The workflow runs whatever is on `main`: tests, scripts, build
    files, dependencies.

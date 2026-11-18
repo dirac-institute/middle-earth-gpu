@@ -19,7 +19,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE=localhost/middle-earth-gpu-runner:latest
 # Runner group to join. Must already exist in the org, set up as in DEPLOY.md.
-GROUP="${RUNNER_GROUP:-gpu}"
+GROUP="${RUNNER_GROUP:-middle-earth-gpu}"
 
 die() { echo "FATAL: $*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "must run as root"

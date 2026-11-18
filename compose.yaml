@@ -50,7 +50,7 @@ services:
     labels:
       idac.service: gpu-runner-dirac-institute
 
-  # Not deployed yet: lincc-frameworks has no `gpu` runner group or
+  # Not deployed yet: lincc-frameworks has no `middle-earth-gpu` runner group or
   # registration. To enable, uncomment this block, add the org back to ORGS
   # in init.sh, and follow DEPLOY.md, "Adding an org".
   # runner-lincc-frameworks:
