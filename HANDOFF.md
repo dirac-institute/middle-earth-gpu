@@ -57,6 +57,14 @@ test.
   repos aren't allowed (seen by accident while setting up).
 - **Smoke test workflow** (`.github/workflows/gpu-smoke-test.yml`) is on
   both orgs' runner group lists and passes in both.
+- **Two CDI specs (decided: leave as-is, 2026-11-19).** `init.sh` writes
+  `/etc/cdi/nvidia.yaml`, and the container toolkit's
+  `nvidia-cdi-refresh.service` writes `/var/run/cdi/nvidia.yaml` (at boot, on
+  driver module load, and on driver or toolkit changes). Podman uses the
+  `/var/run/cdi` one, so `init.sh`'s is redundant but harmless. Two specs
+  for the same devices in the *same* directory do conflict, and podman
+  rejects both (`nvidia-ctk cdi list` finds 0 devices), so never leave a
+  second spec in `/etc/cdi`.
 - **Monitoring container** answers locally on port 9110, every source `1`.
 
 ### Still to do
@@ -82,17 +90,9 @@ test.
      --query-compute-apps` in one container lists processes started in the
      other. If not, the memory threshold still catches a busy GPU; set
      `GPU_IDLE_MAX_MIB` from the idle baseline (0 MiB on this L4 so far).
-7. **Two CDI specs.** `init.sh` writes `/etc/cdi/nvidia.yaml`, and the
-   container toolkit's `nvidia-cdi-refresh.service` writes
-   `/var/run/cdi/nvidia.yaml` (at boot, on driver module load, and on driver
-   or toolkit changes). Podman uses the `/var/run/cdi` one; `init.sh`'s is
-   never used. Decide whether `init.sh` should stop writing its own and just
-   restart `nvidia-cdi-refresh.service`. Two specs for the same devices in
-   the *same* directory conflict and podman rejects both (`nvidia-ctk cdi
-   list` finds 0 devices), so never leave a second spec in `/etc/cdi`.
-8. **Boot ordering.** NVIDIA orders docker/containerd/crio after
+7. **Boot ordering.** NVIDIA orders docker/containerd/crio after
    `nvidia-cdi-refresh.service`, but not `podman-restart.service`, which
    starts the runners at boot. If the runners start before the spec exists,
    their GPU device won't resolve. Check during the reboot test (3); the fix
    would be a drop-in from `init.sh` with `After=nvidia-cdi-refresh.service`.
-9. **Delete this file** once everything above is done.
+8. **Delete this file** once everything above is done.
