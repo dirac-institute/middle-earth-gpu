@@ -367,24 +367,34 @@ podman image inspect --format '{{.Digest}}' ghcr.io/actions/actions-runner:2.338
 
 ## Restarting a runner
 
-To restart a runner, even mid-job, use `podman compose restart` or `podman
-stop`, never `podman kill`. A stopped runner closes its GitHub session. If
-it is killed, or crashes, GitHub keeps treating it as busy for a while, and
-it takes no jobs:
+To restart a runner, use `podman compose restart` or `podman stop`, never
+`podman kill`. A stopped runner deletes its GitHub session on the way out
+("Deleting Runner Session..."), so it is back and listening within seconds
+(3 s when measured). Avoid doing it mid-job if you can: the job fails.
 
-1. **About 3 minutes offline.** When it comes back, its log repeats "A
-   session for this runner already exists" until GitHub drops the old
+If a runner is killed, crashes, or the VM reboots, it cannot delete its
+session, and GitHub treats it as busy for a while:
+
+1. **About 30 s to 3 minutes offline.** When it comes back, its log repeats
+   "A session for this runner already exists" until GitHub drops the old
    session. It then reconnects ("Runner reconnected") with no help.
-2. **Then "Active" on the dead job, indefinitely.** GitHub still thinks the
-   job that was running is running. Cancel that run on GitHub; the runner's
-   log shows "Job cancellation request ... received, cancellation timeout 5
-   minutes", and it goes Idle when those 5 minutes are up. If nobody
-   cancels, it lasts until the job's `timeout-minutes`.
+2. **Then, only if it was running a job: "Active" on that job,
+   indefinitely.** GitHub still thinks the job is running and sends the
+   runner nothing new. Cancel that run on GitHub; the runner's log shows
+   "Job cancellation request ... received, cancellation timeout 5 minutes",
+   and it goes Idle when those 5 minutes are up. If nobody cancels, it lasts
+   until the job's `timeout-minutes`.
 
 The GPU lock is not the problem in either case: the runner clears its own
-stale lock as soon as its container starts. This was measured on 2026-11-18
-(about 10 minutes from `podman kill` to the next job, with a cancel). A VM
-reboot mid-job probably behaves the same way, but that has not been tested.
+stale lock as soon as its container starts.
+
+Measured on `vga`: after `podman kill` mid-job (2026-11-18), about 10 minutes
+to the next job, with a cancel. After a reboot mid-job (2026-11-19), all
+containers were back within 7 s of boot; the runner that had a job
+reconnected after 32 s and then stayed Active until its run was cancelled,
+and the idle runner reconnected after 2 min 38 s. The reboot stopped the
+containers, but they still didn't delete their sessions (the journal isn't
+kept across reboots, so it's not known why), so treat a reboot like a crash.
 
 ## Removing a runner, or if its credentials leak
 
@@ -468,7 +478,7 @@ entry. Otherwise the dashboard shows it as down.
 enabled, which `init.sh` does. `init.sh` also orders it after the container
 toolkit's `nvidia-cdi-refresh.service`, which recreates the GPU's CDI spec in
 `/var/run/cdi` at every boot; otherwise the runners could start before their
-GPU device exists. A job that was running at reboot fails on
-GitHub; its GPU lock is cleared when its runner restarts. Expect the
-runner to be unavailable for a while after a reboot mid-job; see
-"Restarting a runner".
+GPU device exists. A job that was running at reboot stays "in progress" on
+GitHub, and its runner takes no new jobs, until someone cancels that run;
+see "Restarting a runner". Its GPU lock is cleared when its runner
+restarts.

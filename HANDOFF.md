@@ -80,30 +80,26 @@ test.
   in "Set up runner" with "The GPU is not idle..." and `nvidia-smi` output,
   and the lock was released. `nvidia-smi --query-compute-apps` in the runner
   did not list the host process either; the memory threshold caught it.
+- **Reboot mid-job** (2026-11-19): all three containers were back within 7 s
+  of boot; `podman-restart` started after `nvidia-cdi-refresh` finished (the
+  `init.sh` drop-in); both runners saw the GPU; the interrupted job's lock was
+  cleared by its runner's entrypoint; no AVCs since boot. The runner with the
+  interrupted job stayed Active on it until the run was cancelled, then took
+  the next job 5 minutes later; the idle runner reconnected after 2 min 38 s.
+  A graceful `podman restart` of an idle runner reconnected in 3 s. Details in
+  DEPLOY.md, "Restarting a runner".
 - **Monitoring container** answers locally on port 9110, every source `1`.
 
 ### Still to do
 
 1. **Fill in the "Who can change its settings" table** in DEPLOY.md,
    "GitHub-side setup".
-2. **Reboot the VM mid-job** (check with IT first how a reboot of this VM
-   works). Start a smoke test with `hold_seconds` = 600, then reboot. After
-   it, check:
-   - all three containers came back on their own (`podman ps`);
-   - both runners see the GPU (`podman exec <runner> nvidia-smi -L`); this
-     also tests the boot ordering `init.sh` now sets up
-     (`podman-restart.service` after `nvidia-cdi-refresh.service`; see
-     `journalctl -b -u nvidia-cdi-refresh -u podman-restart` for the order);
-   - the GPU lock is clear;
-   - how long GitHub keeps the interrupted runner offline or "Active"
-     (DEPLOY.md, "Restarting a runner"), and that the next job runs;
-   - no new SELinux denials (`ausearch -m AVC -ts boot`).
-3. **Fork pull request:** from a fork, open a pull request that adds a
+2. **Fork pull request:** from a fork, open a pull request that adds a
    workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`. Its
    job must stay queued and never reach the VM, even after a maintainer
    approves the run. Do it in both orgs: each group was configured by hand.
-4. **Monitoring from outside:** `curl -s
+3. **Monitoring from outside:** `curl -s
    http://vga.astro.washington.edu:9110/metrics | grep source_success` from
    another machine (if it can't connect, that is a firewall question for
    IT), then the gadget monitor PR (DEPLOY.md, "Monitoring").
-5. **Delete this file** once everything above is done.
+4. **Delete this file** once everything above is done.
