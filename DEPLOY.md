@@ -322,8 +322,11 @@ Key things to know:
   IT creates this account on the VM and names it in `/root/VM.set`;
   `init.sh` checks the two agree and exits if they do not.
 - **GPU containers** use CDI: `init.sh` installs the NVIDIA Container
-  Toolkit and writes `/etc/cdi/nvidia.yaml`, and `compose.yaml` asks for the
-  device `nvidia.com/gpu=all`.
+  Toolkit and writes `/etc/cdi/nvidia.json`, and `compose.yaml` asks for the
+  device `nvidia.com/gpu=all`. `init.sh` removes one mount from the spec that
+  `nvidia-ctk` generates: nvidia-persistenced's socket. SELinux policy
+  doesn't let containers connect to that daemon, and jobs don't need to;
+  persistence mode works without it.
 
 ## Adding an org
 

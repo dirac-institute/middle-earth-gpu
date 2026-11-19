@@ -114,14 +114,70 @@ else
 fi
 # The CDI spec lists driver files by version, so regenerate it on every run;
 # after a driver update, re-running init.sh is enough.
+#
+# One mount is removed from it: nvidia-persistenced's socket. When the daemon
+# is running, nvidia-ctk mounts its socket into every GPU container, and
+# nvidia-smi in a job then tries to connect to it. SELinux policy doesn't
+# allow containers (container_t) to connect to the daemon (xserver_t), so
+# that is denied: logged in permissive mode, refused in enforcing mode. Jobs
+# don't need it: persistence mode is a host setting, kept by the daemon
+# whether or not containers can reach it. nvidia-ctk has no option to leave
+# the socket out (--csv.ignore-pattern only applies in CSV mode), so it is
+# filtered out here, which avoids an SELinux policy change.
+CDI_SPEC=/etc/cdi/nvidia.json
 mkdir -p /etc/cdi
+# Built in a scratch directory podman doesn't read, then moved into place in
+# one step (same filesystem). The file must end in .json: nvidia-ctk appends
+# the extension otherwise.
+cdi_tmpdir="$(mktemp -d /etc/.nvidia-cdi.XXXXXX)"
+trap 'rm -rf "$cdi_tmpdir"' EXIT
+cdi_tmp="$cdi_tmpdir/nvidia.json"
 # It logs a line per driver file it looks for (many "not found" warnings for
 # display libraries a headless VM doesn't have); show them only on failure.
-cdi_log="$(nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml 2>&1)" \
+cdi_log="$(nvidia-ctk cdi generate --format=json --output="$cdi_tmp" 2>&1)" \
     || { echo "$cdi_log" >&2; die "nvidia-ctk cdi generate failed"; }
+removed="$(python3 -I - "$cdi_tmp" <<'EOF'
+import json, sys
+
+path = sys.argv[1]
+with open(path) as f:
+    spec = json.load(f)
+
+SOCKET_DIRS = ("/run/nvidia-persistenced/", "/var/run/nvidia-persistenced/")
+removed = 0
+
+def drop_socket(edits):
+    global removed
+    if not edits or "mounts" not in edits:
+        return
+    kept = [m for m in edits["mounts"]
+            if not m.get("hostPath", "").startswith(SOCKET_DIRS)]
+    removed += len(edits["mounts"]) - len(kept)
+    edits["mounts"] = kept
+
+# Mounts can be listed for the whole spec and for each device.
+drop_socket(spec.get("containerEdits"))
+for device in spec.get("devices", []):
+    drop_socket(device.get("containerEdits"))
+
+with open(path, "w") as f:
+    json.dump(spec, f, indent=2)
+print(removed)
+EOF
+)" || die "could not remove the nvidia-persistenced socket from the CDI spec"
+# If NVIDIA ever moves the socket somewhere the filter doesn't match, stop
+# rather than silently mounting it again. (`!` is exempt from set -e, but the
+# `|| die` still fires when grep finds it.)
+! grep -q 'nvidia-persistenced/socket' "$cdi_tmp" \
+    || die "CDI spec still mounts the nvidia-persistenced socket; update the filter in init.sh"
+chmod 0644 "$cdi_tmp"
+mv -f "$cdi_tmp" "$CDI_SPEC"
+# Earlier versions of init.sh wrote YAML. Two specs for the same devices
+# would make podman refuse them both, so remove the old one.
+rm -f /etc/cdi/nvidia.yaml
 nvidia-ctk cdi list 2>/dev/null | grep -q 'nvidia.com/gpu=all' \
     || die "CDI spec has no nvidia.com/gpu=all device; check 'nvidia-ctk cdi list'"
-echo "  ok   CDI spec written to /etc/cdi/nvidia.yaml"
+echo "  ok   CDI spec written to $CDI_SPEC (nvidia-persistenced socket mounts removed: $removed)"
 
 # Persistence mode keeps the driver initialised between jobs, so the first
 # job after an idle period doesn't pay a startup cost in its timings. The
