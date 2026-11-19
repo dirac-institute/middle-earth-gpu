@@ -52,15 +52,19 @@ trap 'status=$?; if [ "$status" -ne 0 ]; then lock_release_if_mine; fi' EXIT
 command -v nvidia-smi >/dev/null \
     || { echo "::error::nvidia-smi not found in the container: the GPU is not attached (check compose.yaml devices and init.sh CDI)"; exit 1; }
 
+# Sets `mem` (MiB in use) and `apps` (compute processes nvidia-smi can see:
+# only this container's and some host ones, so usually 0 even when busy; the
+# memory check is what catches the rest).
 gpu_busy() {
-    local apps mem
     apps="$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | grep -c . || true)"
     mem="$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | sort -n | tail -n 1)"
-    echo "  compute processes: ${apps:-0}, max memory used: ${mem:-?} MiB"
     [ "${apps:-0}" -gt 0 ] || [ "${mem:-0}" -gt "$IDLE_MAX_MIB" ]
 }
 idle_waited=0
 while gpu_busy; do
+    procs=""
+    [ "${apps:-0}" -gt 0 ] && procs=", ${apps} compute process(es)"
+    echo "GPU busy: ${mem:-?} MiB in use (idle is at most ${IDLE_MAX_MIB} MiB)${procs}; waited ${idle_waited}s of ${IDLE_GRACE}s..."
     if [ "$idle_waited" -ge "$IDLE_GRACE" ]; then
         echo "::error::The GPU is not idle even though this runner holds the lock. Something outside the runners (or an orphaned process) is using it; not running a benchmark on a busy card."
         nvidia-smi || true
@@ -69,7 +73,7 @@ while gpu_busy; do
     sleep 10
     idle_waited=$(( idle_waited + 10 ))
 done
-echo "GPU is idle."
+echo "GPU is idle: ${mem:-?} MiB in use (idle is at most ${IDLE_MAX_MIB} MiB)."
 
 # ── 3. Record GPU state ────────────────────────────────────────────────────
 nvidia-smi --query-gpu=name,driver_version,persistence_mode,clocks.sm,clocks.mem,clocks.max.sm,temperature.gpu,power.draw \
