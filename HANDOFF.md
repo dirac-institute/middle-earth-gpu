@@ -93,11 +93,13 @@ test.
 
 ### Still to do
 
-1. **Fork pull request:** from a fork, open a pull request that adds a
+1. **Fill in the "Who can change its settings" table** in DEPLOY.md,
+   "GitHub-side setup".
+2. **Fork pull request:** from a fork, open a pull request that adds a
    workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`. Its
    job must stay queued and never reach the VM, even after a maintainer
    approves the run. Do it in both orgs: each group was configured by hand.
-2. **Reboot again after deploying the NFS boot fix.** The reboot after the
+3. **Reboot again after deploying the NFS boot fix.** The reboot after the
    2026-11-19 point release (Rocky 10.3, kernel 6.12.0-264, podman 6.1.1)
    found that podman started the runners before `/service/shire` was
    mounted: `gpu-runner-dirac-institute` failed to start, and the other two
@@ -106,4 +108,4 @@ test.
    After `sudo ./init.sh` and a plain `reboot`, check: all three containers
    Up, `systemctl status podman-restart` succeeded, and the journal shows
    `service-shire.mount` mounted before `podman-restart` started.
-3. **Delete this file** once everything above is done.
+4. **Delete this file** once everything above is done.

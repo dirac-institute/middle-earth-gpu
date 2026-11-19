@@ -99,4 +99,3 @@ a runner, the GPU driver, SELinux, boot order and monitoring.
 | [`USING.md`](USING.md) | You want to run a job on the GPU. |
 | [`DEPLOY.md`](DEPLOY.md) | You are deploying, operating or changing the runners. |
 | [`SECRETS.md`](SECRETS.md) | You are deciding who gets write access to a repo that uses the GPU, want to know who has access to what, or a runner's credentials may have leaked. |
-| [`HANDOFF.md`](HANDOFF.md) | You are finishing the initial deployment: what has been verified, and what is left. |
