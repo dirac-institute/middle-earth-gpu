@@ -18,8 +18,10 @@ Three people may be involved; they can be the same person.
 Repo admins cannot change the runner group: it is an org setting. DEPLOY.md,
 "GitHub-side setup", lists who can change it in each org.
 
-The runner is set up for `dirac-institute`. `lincc-frameworks` is planned but
-not yet running.
+Your repo must be in `dirac-institute` or `lincc-frameworks`: each org has
+its own runner group, and a runner group only takes jobs from repos in its
+own org. A repo elsewhere (a personal account, or another org) can't use it,
+even if it is a fork of one that can.
 
 ## 1. Write the workflow
 
@@ -96,8 +98,9 @@ Trigger it (for `workflow_dispatch`: Actions → your workflow → Run workflow,
 on `main`). In the job log:
 
 - **"Set up runner"** shows `Acquired GPU lock as '<org>' after waiting Ns`,
-  `GPU is idle`, and the GPU's clocks, temperature and power. If another job
-  holds the GPU, it shows who, and waits.
+  `GPU is idle: 0 MiB in use (...)`, and the GPU's clocks, temperature and
+  power. If another job holds the GPU, it shows who (`GPU in use by '<org>'
+  (...)`), and waits.
 - **"Complete runner"** shows the lock being released.
 
 ## What a job gets
@@ -127,7 +130,7 @@ on `main`). In the job log:
 |---|---|---|
 | "Waiting for a runner to pick up this job", indefinitely | The repo isn't in the group's repository access, the workflow entry is missing or doesn't match exactly, or the run isn't at `refs/heads/main` (see above). GitHub gives no error. | Fix the entry or the trigger, then **cancel the run and start a new one**: a queued run is not matched again. |
 | "Set up runner" says `GPU in use by ...` | Another job holds the GPU. | Nothing: it runs when that job finishes, or fails after 3 hours of waiting. |
-| "Set up runner" fails with "The GPU is not idle" | Something outside the runners is using the GPU. | Tell the VM's operators (DEPLOY.md). |
+| "Set up runner" says `GPU busy: N MiB in use`, then fails with "The GPU is not idle" | Something is using the GPU although no job holds the lock: a process left behind outside the runners, or on the VM itself. | Tell the VM's operators (DEPLOY.md). |
 | The runner shows "Offline", or "Active" with nothing running | It was restarted or crashed mid-job. | It recovers by itself; see DEPLOY.md, "Restarting a runner". |
 
 Anything else: ask your org's admins for the runner group (listed in

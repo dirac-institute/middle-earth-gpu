@@ -7,7 +7,7 @@ benchmarks.
 | Org | Status |
 |---|---|
 | `dirac-institute` | Running |
-| `lincc-frameworks` | Planned; commented out in `compose.yaml` |
+| `lincc-frameworks` | Running |
 
 ## How it works
 
@@ -20,8 +20,8 @@ benchmarks.
   other jobs.
 - **GitHub decides which code runs here.** In each org, a runner group called
   `middle-earth-gpu` accepts jobs only from listed workflow files on `main`
-  of listed repos. Pull requests, including ones from forks, never reach this
-  VM.
+  of listed repos in that org. Pull requests, including ones from forks,
+  never reach this VM.
 - **Jobs get the GPU and nothing more:** no `sudo` and no Docker or podman.
 
 It follows the
@@ -32,7 +32,8 @@ compose`.
 
 ## Running a job on the GPU
 
-For someone with a repo in an org where the runner is set up:
+For someone with a repo in `dirac-institute` or `lincc-frameworks` (a
+runner group only takes jobs from repos in its own org):
 
 1. **Add a workflow** to your repo, starting from
    [`examples/gpu-benchmark.yml`](examples/gpu-benchmark.yml). Its GPU job
@@ -77,16 +78,19 @@ git clone git@github.com:dirac-institute/middle-earth-gpu.git /root/middle-earth
 cd /root/middle-earth-gpu
 sudo ./init.sh                          # host setup; safe to re-run
 sudo ./register.sh dirac-institute      # once per org; asks for a registration token
+sudo ./register.sh lincc-frameworks
 podman compose up -d --build
 ```
 
 Each org's runner group has to exist before its runner is registered. Then
-check that the runner shows as **Idle** on GitHub, and run this repo's
-**GPU smoke test** workflow by hand.
+check that the runners show as **Idle** on GitHub, and run the **GPU smoke
+test** workflow by hand in each org: from this repo in `dirac-institute`, and
+from its fork, `lincc-frameworks/middle-earth-gpu`, in `lincc-frameworks`.
+The fork exists only for that; all changes go to this repo.
 
 [`DEPLOY.md`](DEPLOY.md) covers all of this in detail: the GitHub-side setup,
 the design and its choices, the GPU lock, adding an org, upgrading, restarting
-a runner, the GPU driver and monitoring.
+a runner, the GPU driver, SELinux, boot order and monitoring.
 
 ## Documentation
 
