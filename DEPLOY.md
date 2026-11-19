@@ -205,7 +205,7 @@ the runner services in `compose.yaml`:
 |---|---|---|
 | `GPU_LOCK_MAX_WAIT_SECONDS` | 10800 | Fail the job after waiting this long. |
 | `GPU_LOCK_STALE_SECONDS` | 86400 | Treat the *other* runner's lock as abandoned after this long. |
-| `GPU_IDLE_MAX_MIB` | 512 | "Idle" means at most this much GPU memory in use. |
+| `GPU_IDLE_MAX_MIB` | 64 | "Idle" means at most this much GPU memory in use. It is the only check that sees GPU work in the *other* runner's container (`nvidia-smi` lists only processes in its own), so keep it below the ~190 MiB any CUDA process uses; idle is 0 MiB on the L4. |
 | `GPU_IDLE_GRACE_SECONDS` | 60 | How long to wait for the GPU to go idle before failing. |
 
 A lock left behind by a crash clears itself: a runner releases its own lock

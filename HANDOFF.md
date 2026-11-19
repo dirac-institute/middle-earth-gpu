@@ -65,6 +65,11 @@ test.
   for the same devices in the *same* directory do conflict, and podman
   rejects both (`nvidia-ctk cdi list` finds 0 devices), so never leave a
   second spec in `/etc/cdi`.
+- **Idle check across containers** (2026-11-19): `nvidia-smi
+  --query-compute-apps` in one runner does not list processes in the other,
+  but memory use is shared. A CUDA process holds ~190 MiB before allocating
+  anything and the idle baseline is 0 MiB, so `GPU_IDLE_MAX_MIB` went from
+  512 to 64.
 - **Monitoring container** answers locally on port 9110, every source `1`.
 
 ### Still to do
@@ -83,13 +88,8 @@ test.
    http://vga.astro.washington.edu:9110/metrics | grep source_success` from
    another machine (if it can't connect, that is a firewall question for
    IT), then the gadget monitor PR (DEPLOY.md, "Monitoring").
-6. **Both orgs together:**
-   - **Contention:** start jobs in both orgs at once; one waits, logs who
-     holds the GPU, then runs after the other finishes.
-   - **Idle check across containers:** whether `nvidia-smi
-     --query-compute-apps` in one container lists processes started in the
-     other. If not, the memory threshold still catches a busy GPU; set
-     `GPU_IDLE_MAX_MIB` from the idle baseline (0 MiB on this L4 so far).
+6. **Contention:** start jobs in both orgs at once; one waits, logs who
+   holds the GPU, then runs after the other finishes.
 7. **Boot ordering.** NVIDIA orders docker/containerd/crio after
    `nvidia-cdi-refresh.service`, but not `podman-restart.service`, which
    starts the runners at boot. If the runners start before the spec exists,

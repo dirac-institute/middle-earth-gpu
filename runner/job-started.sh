@@ -10,7 +10,11 @@ source /opt/gpu-runner/gpu-lock-lib.sh
 
 MAX_WAIT="${GPU_LOCK_MAX_WAIT_SECONDS:-10800}"   # give up after 3 h
 STALE="${GPU_LOCK_STALE_SECONDS:-86400}"         # another runner's lock older than 24 h is stale
-IDLE_MAX_MIB="${GPU_IDLE_MAX_MIB:-512}"          # "idle" means at most this much GPU memory in use
+# "Idle" means at most this much GPU memory in use. This is the only check
+# that sees the other runner's container: nvidia-smi doesn't list processes
+# from another PID namespace, but memory use is per GPU. Measured on the L4:
+# idle is 0 MiB, and a CUDA process holds ~190 MiB before allocating anything.
+IDLE_MAX_MIB="${GPU_IDLE_MAX_MIB:-64}"
 IDLE_GRACE="${GPU_IDLE_GRACE_SECONDS:-60}"       # how long to wait for the GPU to go idle
 POLL=30
 
