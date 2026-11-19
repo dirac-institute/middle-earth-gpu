@@ -34,8 +34,11 @@ Deployed for **dirac-institute**. lincc-frameworks is enabled in
   and `run.sh` work, `/home/runner` is writable, no sudo, GPU visible.
 - **podman-compose 1.5.0 (EPEL).** `<<:` merge keys, the CDI device and
   `extends` all work.
-- **SELinux and NFS.** No AVC denials from registering or running.
-  SELinux is Permissive on this VM (accepted); `virt_use_nfs` is on.
+- **SELinux and NFS.** No AVC denials from registering or from the NFS
+  mounts. SELinux is Permissive on this VM (accepted); `virt_use_nfs` is on.
+  Jobs' `nvidia-smi` was denied access to nvidia-persistenced's socket;
+  `init.sh` now loads `selinux/middle_earth_gpu.te` for that (check after
+  deploying: no new AVCs once both runners are recreated and run a job).
 - **`register.sh`** for dirac-institute: three 0600 files owned by
   `astro-vga`, unreadable by root, runner `vga-dirac-institute` in group
   `middle-earth-gpu`.
@@ -74,4 +77,15 @@ Deployed for **dirac-institute**. lincc-frameworks is enabled in
      --query-compute-apps` in one container lists processes started in the
      other. If not, the memory threshold still catches a busy GPU; set
      `GPU_IDLE_MAX_MIB` from the idle baseline (0 MiB on this L4 so far).
-7. **Delete this file** once everything above is done.
+7. **Two CDI specs.** `init.sh` writes `/etc/cdi/nvidia.yaml`, and the
+   container toolkit's `nvidia-cdi-refresh.service` writes
+   `/var/run/cdi/nvidia.yaml` (at boot, on driver module load, and on driver
+   or toolkit changes). Podman uses the `/var/run/cdi` one; `init.sh`'s is
+   never used. Decide whether `init.sh` should stop writing its own and just
+   restart `nvidia-cdi-refresh.service`.
+8. **Boot ordering.** NVIDIA orders docker/containerd/crio after
+   `nvidia-cdi-refresh.service`, but not `podman-restart.service`, which
+   starts the runners at boot. If the runners start before the spec exists,
+   their GPU device won't resolve. Check during the reboot test (3); the fix
+   would be a drop-in from `init.sh` with `After=nvidia-cdi-refresh.service`.
+9. **Delete this file** once everything above is done.

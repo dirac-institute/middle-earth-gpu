@@ -43,7 +43,8 @@ Then register the VM with the gadget monitor; see "Monitoring" below.
 | File | Role |
 |---|---|
 | `/root/VM.set` (not in the repo) | Written by IT when the VM is provisioned. The source of truth for the service account name, uid, and gid. |
-| `init.sh` | Host-level only: checks the service account from `/root/VM.set`, installs podman, podman-compose and the NVIDIA Container Toolkit, generates the CDI spec that hands the GPU to containers, enables GPU persistence mode and `podman-restart.service`, creates the GPU lock directory, reports which orgs are registered, writes `.env`. Idempotent; safe to re-run. |
+| `init.sh` | Host-level only: checks the service account from `/root/VM.set`, installs podman, podman-compose and the NVIDIA Container Toolkit, generates the CDI spec that hands the GPU to containers, enables GPU persistence mode and `podman-restart.service`, loads the SELinux module in `selinux/`, creates the GPU lock directory, reports which orgs are registered, writes `.env`. Idempotent; safe to re-run. |
+| `selinux/middle_earth_gpu.te` | SELinux policy module, loaded by `init.sh`: lets GPU containers reach nvidia-persistenced's socket. See "VM infrastructure context". |
 | `register.sh` | One-time, per org: registers a runner with GitHub using a short-lived token, and saves its credentials to `/service/shire` as the service account. |
 | `Dockerfile` | GitHub's official runner image (pinned), run as the service account, with the GPU lock hooks. |
 | `runner/entrypoint.sh` | Container entrypoint: links the org's registration into the runner, clears any lock this runner left behind, starts the runner. |
@@ -322,11 +323,17 @@ Key things to know:
   IT creates this account on the VM and names it in `/root/VM.set`;
   `init.sh` checks the two agree and exits if they do not.
 - **GPU containers** use CDI: `init.sh` installs the NVIDIA Container
-  Toolkit and writes `/etc/cdi/nvidia.json`, and `compose.yaml` asks for the
-  device `nvidia.com/gpu=all`. `init.sh` removes one mount from the spec that
-  `nvidia-ctk` generates: nvidia-persistenced's socket. SELinux policy
-  doesn't let containers connect to that daemon, and jobs don't need to;
-  persistence mode works without it.
+  Toolkit and writes `/etc/cdi/nvidia.yaml`, and `compose.yaml` asks for the
+  device `nvidia.com/gpu=all`.
+- **SELinux** is permissive on this VM and IT expects to keep it that way,
+  but the service is meant to work under enforcing too. The CDI spec mounts
+  nvidia-persistenced's socket into GPU containers, and the base policy
+  doesn't let containers connect to it, so every job's `nvidia-smi` logged a
+  denial. `init.sh` loads a small module, `selinux/middle_earth_gpu.te`,
+  that allows exactly that (`semodule -l | grep middle_earth_gpu` shows it).
+  After any change that could add denials, check
+  `ausearch -m AVC -ts recent`: in permissive mode they are only logged, so
+  nothing else will tell you.
 
 ## Adding an org
 
