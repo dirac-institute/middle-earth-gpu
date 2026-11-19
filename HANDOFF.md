@@ -70,6 +70,11 @@ test.
   but memory use is shared. A CUDA process holds ~190 MiB before allocating
   anything and the idle baseline is 0 MiB, so `GPU_IDLE_MAX_MIB` went from
   512 to 64.
+- **Contention between orgs** (2026-11-19): lincc-frameworks held the GPU
+  for 300 s from 18:34:07Z; dirac-institute's job, started at 18:34:37Z,
+  waited in "Set up runner" ("GPU in use by 'lincc-frameworks' (...)"), took
+  the lock after lincc-frameworks released it at 18:39:08Z, and both
+  succeeded.
 - **Monitoring container** answers locally on port 9110, every source `1`.
 
 ### Still to do
@@ -88,11 +93,9 @@ test.
    http://vga.astro.washington.edu:9110/metrics | grep source_success` from
    another machine (if it can't connect, that is a firewall question for
    IT), then the gadget monitor PR (DEPLOY.md, "Monitoring").
-6. **Contention:** start jobs in both orgs at once; one waits, logs who
-   holds the GPU, then runs after the other finishes.
-7. **Boot ordering.** NVIDIA orders docker/containerd/crio after
+6. **Boot ordering.** NVIDIA orders docker/containerd/crio after
    `nvidia-cdi-refresh.service`, but not `podman-restart.service`, which
    starts the runners at boot. If the runners start before the spec exists,
    their GPU device won't resolve. Check during the reboot test (3); the fix
    would be a drop-in from `init.sh` with `After=nvidia-cdi-refresh.service`.
-8. **Delete this file** once everything above is done.
+7. **Delete this file** once everything above is done.
