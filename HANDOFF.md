@@ -19,9 +19,8 @@ checking on the real VM. Delete this file once everything here is done.
 
 ## Status (2026-11-18, on `vga`)
 
-Deployed for **dirac-institute only**. The lincc-frameworks runner is
-commented out in `compose.yaml` and left out of `ORGS` in `init.sh` until its
-runner group exists.
+Deployed for **dirac-institute**. lincc-frameworks is enabled in
+`compose.yaml` and `init.sh` and is being registered.
 
 ### Done
 
@@ -67,9 +66,8 @@ runner group exists.
    http://vga.astro.washington.edu:9110/metrics | grep source_success` from
    another machine (if it can't connect, that is a firewall question for
    IT), then the gadget monitor PR (DEPLOY.md, "Monitoring").
-6. **lincc-frameworks**, once its `middle-earth-gpu` runner group exists:
-   uncomment its block in `compose.yaml`, add it back to `ORGS` in
-   `init.sh`, register it (DEPLOY.md, "Adding an org"), then:
+6. **lincc-frameworks:** register it (`sudo ./register.sh lincc-frameworks`)
+   and start it (`podman compose up -d --build`), then:
    - **Contention:** start jobs in both orgs at once; one waits, logs who
      holds the GPU, then runs after the other finishes.
    - **Idle check across containers:** whether `nvidia-smi
