@@ -159,18 +159,11 @@ After=nvidia-cdi-refresh.service"
 else
     warn "nvidia-cdi-refresh.service not found; runners may start before the GPU is ready at boot"
 fi
-boot_order_changed=0
-# Earlier versions of init.sh wrote only the NVIDIA ordering, to this file.
-if [ -e "$BOOT_ORDER_DIR/10-after-nvidia-cdi-refresh.conf" ]; then
-    rm -f "$BOOT_ORDER_DIR/10-after-nvidia-cdi-refresh.conf"
-    boot_order_changed=1
-fi
 if [ "$(cat "$BOOT_ORDER_FILE" 2>/dev/null)" != "$want" ]; then
     install -d -m 0755 "$BOOT_ORDER_DIR"
     printf '%s\n' "$want" > "$BOOT_ORDER_FILE"
-    boot_order_changed=1
+    systemctl daemon-reload
 fi
-[ "$boot_order_changed" -eq 0 ] || systemctl daemon-reload
 shire_mount="$(systemd-escape --path --suffix=mount "$SHIRE_DIR")"
 systemctl show -p After podman-restart.service | grep -q "$shire_mount" \
     || die "podman-restart.service is not ordered after $shire_mount; check $BOOT_ORDER_FILE"
