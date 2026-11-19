@@ -56,6 +56,7 @@ Then register the VM with the gadget monitor; see "Monitoring" below.
 | `monitoring/` | Service VM monitor, copied unchanged from [middle-earth-gadget-monitor](https://github.com/dirac-institute/middle-earth-gadget-monitor). |
 | `examples/gpu-benchmark.yml` | A workflow to copy into a repo that wants to use the GPU. |
 | `.github/workflows/gpu-smoke-test.yml` | Run by hand to check a deployed runner: hooks, lock and GPU, with no project code. |
+| `USING.md` | For people adding a GPU job to their repo: permissions, allowlisting, limits, troubleshooting. |
 | `SECRETS.md` | What is secret here, where it lives, and who it trusts. |
 
 ## Architecture
@@ -136,7 +137,8 @@ runner group). Creating groups needs the GitHub Team plan.
   is not matched again.
 
 **2. Only list workflows with trusted triggers:** `push` (to `main`),
-`workflow_dispatch`, `schedule`, `release`. Never list a workflow that uses
+`workflow_dispatch`, `schedule`. (`release` is safe but runs at a tag ref, so
+it never matches a `@refs/heads/main` entry.) Never list a workflow that uses
 `pull_request_target` or `workflow_run`: those run from `main`, so they pass
 the check above, and if they check out a pull request's code they would run it
 here.
@@ -149,44 +151,15 @@ CODEOWNERS entry for `.github/workflows/`.
 **4. Run pull request CI on GitHub-hosted runners**, not here. They are free
 for public repos, and contributors still get fast feedback.
 
-Keep this table current; a successor may not administer both orgs.
-
-| Org | Runner group | Who can change its settings |
-|---|---|---|
-| `dirac-institute` | `middle-earth-gpu` | TODO |
-| `lincc-frameworks` | `middle-earth-gpu` | TODO |
+Only an org's owners (or someone they give runner-group permission) can
+change these settings, and a successor may not be an owner of both orgs.
+`SECRETS.md`, "Who has access", says how to find each org's owners, each
+repo's maintainers, and who has root on this VM.
 
 ## Using the runner
 
-Copy `examples/gpu-benchmark.yml` into a repo's `.github/workflows/`, add that
-file to the org's `middle-earth-gpu` runner group (step 1 above), and merge it to `main`. A
-job reaches this VM with:
-
-```yaml
-runs-on:
-  group: middle-earth-gpu
-  labels: [self-hosted, gpu]
-```
-
-What a job gets:
-
-- **The GPU**, with the driver's libraries injected by CDI. The CUDA *runtime*
-  is not in the image; get it the usual way for your stack (PyTorch and JAX
-  wheels bundle it, or use conda).
-- **Ubuntu 24.04 userspace**, from GitHub's runner image. `actions/setup-python`
-  and similar actions work and cache downloads between jobs.
-- **Exclusive use of the GPU** for the whole job.
-- **Environment variables** for recording with results: `GPU_LOCK_OWNER`
-  (which org's runner), `GPU_LOCK_WAIT_SECONDS`, `GPU_DRIVER_VERSION`.
-
-What a job does not get:
-
-- **No `sudo`**, so no system packages. Add what jobs commonly need to the
-  `Dockerfile` instead.
-- **No containers**: no Docker or podman inside jobs (see "Design choices").
-- **A clean machine.** Runners are persistent: files a job leaves outside its
-  workspace (for example in `$HOME`) are still there for the next job, until
-  the container is recreated.
+How a repo gets a job onto this VM, what a job gets, and what to do when one
+doesn't start, are in [`USING.md`](USING.md). Point people there.
 
 ## The GPU lock
 
