@@ -27,8 +27,7 @@ SHIRE_DIR=/service/shire
 # Local (not NFS) directory shared by both runner containers for the GPU lock.
 LOCK_DIR=/var/lib/middle-earth-gpu-runner/gpu-lock
 # One directory per GitHub org this VM serves. Must match compose.yaml.
-# lincc-frameworks is commented out in compose.yaml until it is set up.
-ORGS=(dirac-institute)
+ORGS=(dirac-institute lincc-frameworks)
 
 WARNINGS=0
 warn() { echo "WARNING: $*" >&2; WARNINGS=$((WARNINGS + 1)); }
@@ -136,13 +135,71 @@ else
 fi
 # GPU clock locking is deliberately not done here; see DEPLOY.md, "Clocks".
 
+# Boot order. podman-restart.service starts the runners at boot, and waits
+# only for the network. The runners also need:
+# - The NFS share (SHIRE_DIR), which holds their registrations. fstab mounts
+#   it (_netdev), but nothing orders podman after that: on 2026-11-19 podman
+#   tried to start a runner 9 ms before the share was mounted, that runner
+#   failed to start, podman-restart.service failed, and systemd then killed
+#   the other containers' conmon. WantsMountsFor= mounts it and waits.
+# - The container toolkit's nvidia-cdi-refresh.service, which creates the
+#   GPU's control device nodes and writes the CDI spec podman actually uses
+#   (/var/run/cdi/nvidia.yaml; /run is empty after a reboot). NVIDIA orders
+#   docker, containerd and crio after it, but not podman.
+# Wants, not Requires: if either fails, podman still tries to start the
+# containers, as it would without this.
+BOOT_ORDER_DIR=/etc/systemd/system/podman-restart.service.d
+BOOT_ORDER_FILE="$BOOT_ORDER_DIR/10-middle-earth-gpu.conf"
+want="# Written by middle-earth-gpu's init.sh; edit it there, not here.
+[Unit]
+WantsMountsFor=$SHIRE_DIR
+After=nvidia-cdi-refresh.service"
+if [ "$(cat "$BOOT_ORDER_FILE" 2>/dev/null)" != "$want" ]; then
+    install -d -m 0755 "$BOOT_ORDER_DIR"
+    printf '%s\n' "$want" > "$BOOT_ORDER_FILE"
+    systemctl daemon-reload
+fi
+shire_mount="$(systemd-escape --path --suffix=mount "$SHIRE_DIR")"
+systemctl show -p After podman-restart.service | grep -q "$shire_mount" \
+    || die "podman-restart.service is not ordered after $shire_mount; check $BOOT_ORDER_FILE"
+echo "  ok   podman-restart.service starts after $SHIRE_DIR is mounted ($shire_mount)"
+systemctl show -p After podman-restart.service | grep -q 'nvidia-cdi-refresh.service' \
+    || die "podman-restart.service is not ordered after nvidia-cdi-refresh.service; check $BOOT_ORDER_FILE"
+echo "  ok   podman-restart.service starts after nvidia-cdi-refresh.service"
+
+# ── SELinux ─────────────────────────────────────────────────────────────────
+echo
+echo "== SELinux =="
+# Lets GPU containers reach nvidia-persistenced's socket, which the CDI spec
+# mounts into them; see selinux/middle_earth_gpu.te. Rebuilt and reloaded on
+# every run (loading a module again replaces it), so editing the .te file and
+# re-running init.sh is enough. SELinux mode itself is IT's setting and is
+# not changed here.
+SELINUX_MODULE=middle_earth_gpu
+if selinuxenabled 2>/dev/null; then
+    command -v checkmodule >/dev/null || dnf install -y checkpolicy
+    selinux_tmp="$(mktemp -d)"
+    checkmodule -M -m -o "$selinux_tmp/$SELINUX_MODULE.mod" \
+            "$REPO_DIR/selinux/$SELINUX_MODULE.te" >/dev/null \
+        || die "could not compile selinux/$SELINUX_MODULE.te"
+    semodule_package -o "$selinux_tmp/$SELINUX_MODULE.pp" \
+            -m "$selinux_tmp/$SELINUX_MODULE.mod" \
+        || die "could not package selinux/$SELINUX_MODULE.te"
+    semodule -i "$selinux_tmp/$SELINUX_MODULE.pp" \
+        || die "could not load SELinux module $SELINUX_MODULE"
+    rm -rf "$selinux_tmp"
+    echo "  ok   SELinux module $SELINUX_MODULE loaded ($(getenforce))"
+else
+    echo "SELinux is disabled; skipping module $SELINUX_MODULE"
+fi
+
 # ── GPU lock directory ──────────────────────────────────────────────────────
 echo
-echo "== GPU lock =="
+echo "== GPU lock directory =="
 # Both runner containers bind-mount this; only one may hold the GPU at a time.
 install -d -m 0755 "$(dirname "$LOCK_DIR")"
 install -d -m 0700 -o "$SVC_UID" -g "$SVC_GID" "$LOCK_DIR"
-echo "  ok   $LOCK_DIR owned by $SVC_UID:$SVC_GID"
+echo "  ok   lock directory $LOCK_DIR owned by $SVC_USER ($SVC_UID:$SVC_GID)"
 
 # ── Runner registrations ───────────────────────────────────────────────────
 echo

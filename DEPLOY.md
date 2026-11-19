@@ -43,7 +43,8 @@ Then register the VM with the gadget monitor; see "Monitoring" below.
 | File | Role |
 |---|---|
 | `/root/VM.set` (not in the repo) | Written by IT when the VM is provisioned. The source of truth for the service account name, uid, and gid. |
-| `init.sh` | Host-level only: checks the service account from `/root/VM.set`, installs podman, podman-compose and the NVIDIA Container Toolkit, generates the CDI spec that hands the GPU to containers, enables GPU persistence mode and `podman-restart.service`, creates the GPU lock directory, reports which orgs are registered, writes `.env`. Idempotent; safe to re-run. |
+| `init.sh` | Host-level only: checks the service account from `/root/VM.set`, installs podman, podman-compose and the NVIDIA Container Toolkit, generates the CDI spec that hands the GPU to containers, enables GPU persistence mode and `podman-restart.service`, loads the SELinux module in `selinux/`, creates the GPU lock directory, reports which orgs are registered, writes `.env`. Idempotent; safe to re-run. |
+| `selinux/middle_earth_gpu.te` | SELinux policy module, loaded by `init.sh`: lets GPU containers reach nvidia-persistenced's socket. See "VM infrastructure context". |
 | `register.sh` | One-time, per org: registers a runner with GitHub using a short-lived token, and saves its credentials to `/service/shire` as the service account. |
 | `Dockerfile` | GitHub's official runner image (pinned), run as the service account, with the GPU lock hooks. |
 | `runner/entrypoint.sh` | Container entrypoint: links the org's registration into the runner, clears any lock this runner left behind, starts the runner. |
@@ -179,7 +180,7 @@ the runner services in `compose.yaml`:
 |---|---|---|
 | `GPU_LOCK_MAX_WAIT_SECONDS` | 10800 | Fail the job after waiting this long. |
 | `GPU_LOCK_STALE_SECONDS` | 86400 | Treat the *other* runner's lock as abandoned after this long. |
-| `GPU_IDLE_MAX_MIB` | 512 | "Idle" means at most this much GPU memory in use. |
+| `GPU_IDLE_MAX_MIB` | 64 | "Idle" means at most this much GPU memory in use. It is the only check that sees GPU work in the *other* runner's container (`nvidia-smi` lists only processes in its own), so keep it below the ~190 MiB any CUDA process uses; idle is 0 MiB on the L4. |
 | `GPU_IDLE_GRACE_SECONDS` | 60 | How long to wait for the GPU to go idle before failing. |
 
 A lock left behind by a crash clears itself: a runner releases its own lock
@@ -299,6 +300,15 @@ Key things to know:
 - **GPU containers** use CDI: `init.sh` installs the NVIDIA Container
   Toolkit and writes `/etc/cdi/nvidia.yaml`, and `compose.yaml` asks for the
   device `nvidia.com/gpu=all`.
+- **SELinux** is permissive on this VM and IT expects to keep it that way,
+  but the service is meant to work under enforcing too. The CDI spec mounts
+  nvidia-persistenced's socket into GPU containers, and the base policy
+  doesn't let containers connect to it, so every job's `nvidia-smi` logged a
+  denial. `init.sh` loads a small module, `selinux/middle_earth_gpu.te`,
+  that allows exactly that (`semodule -l | grep middle_earth_gpu` shows it).
+  After any change that could add denials, check
+  `ausearch -m AVC -ts recent`: in permissive mode they are only logged, so
+  nothing else will tell you.
 
 ## Adding an org
 
@@ -332,24 +342,34 @@ podman image inspect --format '{{.Digest}}' ghcr.io/actions/actions-runner:2.338
 
 ## Restarting a runner
 
-To restart a runner, even mid-job, use `podman compose restart` or `podman
-stop`, never `podman kill`. A stopped runner closes its GitHub session. If
-it is killed, or crashes, GitHub keeps treating it as busy for a while, and
-it takes no jobs:
+To restart a runner, use `podman compose restart` or `podman stop`, never
+`podman kill`. A stopped runner deletes its GitHub session on the way out
+("Deleting Runner Session..."), so it is back and listening within seconds
+(3 s when measured). Avoid doing it mid-job if you can: the job fails.
 
-1. **About 3 minutes offline.** When it comes back, its log repeats "A
-   session for this runner already exists" until GitHub drops the old
+If a runner is killed, crashes, or the VM reboots, it cannot delete its
+session, and GitHub treats it as busy for a while:
+
+1. **About 30 s to 3 minutes offline.** When it comes back, its log repeats
+   "A session for this runner already exists" until GitHub drops the old
    session. It then reconnects ("Runner reconnected") with no help.
-2. **Then "Active" on the dead job, indefinitely.** GitHub still thinks the
-   job that was running is running. Cancel that run on GitHub; the runner's
-   log shows "Job cancellation request ... received, cancellation timeout 5
-   minutes", and it goes Idle when those 5 minutes are up. If nobody
-   cancels, it lasts until the job's `timeout-minutes`.
+2. **Then, only if it was running a job: "Active" on that job,
+   indefinitely.** GitHub still thinks the job is running and sends the
+   runner nothing new. Cancel that run on GitHub; the runner's log shows
+   "Job cancellation request ... received, cancellation timeout 5 minutes",
+   and it goes Idle when those 5 minutes are up. If nobody cancels, it lasts
+   until the job's `timeout-minutes`.
 
 The GPU lock is not the problem in either case: the runner clears its own
-stale lock as soon as its container starts. This was measured on 2026-11-18
-(about 10 minutes from `podman kill` to the next job, with a cancel). A VM
-reboot mid-job probably behaves the same way, but that has not been tested.
+stale lock as soon as its container starts.
+
+Measured on `vga`: after `podman kill` mid-job (2026-11-18), about 10 minutes
+to the next job, with a cancel. After a reboot mid-job (2026-11-19), all
+containers were back within 7 s of boot; the runner that had a job
+reconnected after 32 s and then stayed Active until its run was cancelled,
+and the idle runner reconnected after 2 min 38 s. The reboot stopped the
+containers, but they still didn't delete their sessions (the journal isn't
+kept across reboots, so it's not known why), so treat a reboot like a crash.
 
 ## Removing a runner, or if its credentials leak
 
@@ -430,7 +450,24 @@ entry. Otherwise the dashboard shows it as down.
 ## Boot persistence
 
 `restart: unless-stopped` only survives reboot if `podman-restart.service` is
-enabled, which `init.sh` does. A job that was running at reboot fails on
-GitHub; its GPU lock is cleared when its runner restarts. Expect the
-runner to be unavailable for a while after a reboot mid-job; see
-"Restarting a runner".
+enabled, which `init.sh` does. By default it waits only for the network, so
+`init.sh` gives it a drop-in
+(`/etc/systemd/system/podman-restart.service.d/10-middle-earth-gpu.conf`)
+that also makes it wait for:
+
+- **the `/service/shire` NFS mount**, which holds the runners'
+  registrations. Without this, a runner can start before the share is
+  mounted and fail ("cannot stat `/service/shire/runner-state/...`"); that
+  fails the whole `podman-restart.service`, and systemd then kills the other
+  containers' `conmon`, so podman loses track of them too. This happened
+  once, on 2026-11-19.
+- **the container toolkit's `nvidia-cdi-refresh.service`**, which recreates
+  the GPU's CDI spec in `/var/run/cdi` at every boot; otherwise the runners
+  could start before their GPU device exists.
+
+If containers are missing after a boot, check
+`systemctl status podman-restart.service` and
+`journalctl -b -u podman-restart`. A job that was running at reboot stays "in progress" on
+GitHub, and its runner takes no new jobs, until someone cancels that run;
+see "Restarting a runner". Its GPU lock is cleared when its runner
+restarts.

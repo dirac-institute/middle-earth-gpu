@@ -50,20 +50,17 @@ services:
     labels:
       idac.service: gpu-runner-dirac-institute
 
-  # Not deployed yet: lincc-frameworks has no `middle-earth-gpu` runner group or
-  # registration. To enable, uncomment this block, add the org back to ORGS
-  # in init.sh, and follow DEPLOY.md, "Adding an org".
-  # runner-lincc-frameworks:
-  #   <<: *runner
-  #   container_name: gpu-runner-lincc-frameworks
-  #   environment:
-  #     RUNNER_ORG: lincc-frameworks
-  #     LOCK_OWNER: lincc-frameworks
-  #   volumes:
-  #     - "${SVC_SHIRE_DIR}/runner-state/lincc-frameworks:/runner-state"
-  #     - "${GPU_LOCK_DIR}:/gpu-lock:z"
-  #   labels:
-  #     idac.service: gpu-runner-lincc-frameworks
+  runner-lincc-frameworks:
+    <<: *runner
+    container_name: gpu-runner-lincc-frameworks
+    environment:
+      RUNNER_ORG: lincc-frameworks
+      LOCK_OWNER: lincc-frameworks
+    volumes:
+      - "${SVC_SHIRE_DIR}/runner-state/lincc-frameworks:/runner-state"
+      - "${GPU_LOCK_DIR}:/gpu-lock:z"
+    labels:
+      idac.service: gpu-runner-lincc-frameworks
 
   # CPU, memory and disks of this VM, for the gadget monitor (monitoring/README.md).
   # Copied unchanged from middle-earth-gadget-monitor; its settings live in

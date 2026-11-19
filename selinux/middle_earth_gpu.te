@@ -1,0 +1,28 @@
+# SELinux policy for the Middle-earth GPU runner. Built and loaded by init.sh
+# on every run; edit it here, never on the VM.
+#
+# The NVIDIA Container Toolkit's CDI spec mounts nvidia-persistenced's socket
+# (/run/nvidia-persistenced/socket) into every GPU container, and nvidia-smi
+# in a job connects to it. The daemon runs as xserver_t (the label NVIDIA's
+# nvidia-driver-selinux package gives it) and its socket is var_run_t; the
+# base policy allows containers neither. Without these rules every job's
+# nvidia-smi is denied: logged while SELinux is permissive, refused if it is
+# ever enforcing.
+#
+# These rules apply to every container on the VM, not just the runners, but a
+# container can only reach sockets that are mounted into it, and only the GPU
+# runners get this one. There is no X server on this VM (xserver_t is only
+# nvidia-persistenced here).
+
+module middle_earth_gpu 1.0;
+
+require {
+    type container_t;
+    type xserver_t;
+    type var_run_t;
+    class unix_stream_socket connectto;
+    class sock_file write;
+}
+
+allow container_t xserver_t:unix_stream_socket connectto;
+allow container_t var_run_t:sock_file write;
