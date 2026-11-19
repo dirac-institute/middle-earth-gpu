@@ -195,11 +195,11 @@ fi
 
 # ── GPU lock directory ──────────────────────────────────────────────────────
 echo
-echo "== GPU lock =="
+echo "== GPU lock directory =="
 # Both runner containers bind-mount this; only one may hold the GPU at a time.
 install -d -m 0755 "$(dirname "$LOCK_DIR")"
 install -d -m 0700 -o "$SVC_UID" -g "$SVC_GID" "$LOCK_DIR"
-echo "  ok   $LOCK_DIR owned by $SVC_UID:$SVC_GID"
+echo "  ok   lock directory $LOCK_DIR owned by $SVC_USER ($SVC_UID:$SVC_GID)"
 
 # ── Runner registrations ───────────────────────────────────────────────────
 echo
