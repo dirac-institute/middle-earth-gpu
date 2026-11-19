@@ -17,10 +17,17 @@ checking on the real VM. Delete this file once everything here is done.
   "GitHub-side setup"). They are what keeps untrusted pull request code off
   this VM.
 
-## Status (2026-11-18, on `vga`)
+## Status (2026-11-19, on `vga`)
 
-Deployed for **dirac-institute**. lincc-frameworks is enabled in
-`compose.yaml` and `init.sh` and is being registered.
+Deployed and passing for **both orgs**: `vga-dirac-institute` and
+`vga-lincc-frameworks`, both in their org's `middle-earth-gpu` runner group.
+
+There are two copies of this repo on GitHub. `dirac-institute/middle-earth-gpu`
+is authoritative: branches, PRs and the VM's checkout use it.
+`lincc-frameworks/middle-earth-gpu` is a fork, synced to `main`, which exists
+only because a runner group accepts jobs from repos in its own org; the
+lincc-frameworks group's workflow list names the fork's copy of the smoke
+test.
 
 ### Done
 
@@ -37,11 +44,10 @@ Deployed for **dirac-institute**. lincc-frameworks is enabled in
 - **SELinux and NFS.** No AVC denials from registering or from the NFS
   mounts. SELinux is Permissive on this VM (accepted); `virt_use_nfs` is on.
   Jobs' `nvidia-smi` was denied access to nvidia-persistenced's socket;
-  `init.sh` now loads `selinux/middle_earth_gpu.te` for that (check after
-  deploying: no new AVCs once both runners are recreated and run a job).
-- **`register.sh`** for dirac-institute: three 0600 files owned by
-  `astro-vga`, unreadable by root, runner `vga-dirac-institute` in group
-  `middle-earth-gpu`.
+  `init.sh` loads `selinux/middle_earth_gpu.te` for that, and after it was
+  loaded, fresh runners in both orgs ran smoke tests with no new AVCs.
+- **`register.sh`** for both orgs: three 0600 files each, owned by
+  `astro-vga`, unreadable by root.
 - **Hooks.** "Set up runner" and "Complete runner" run; `GPU_LOCK_*` and
   `GPU_DRIVER_VERSION` reach the job; nvidia-smi works in jobs.
 - **The lock:** released on cancel (and no processes left over);
@@ -50,7 +56,7 @@ Deployed for **dirac-institute**. lincc-frameworks is enabled in
 - **GitHub-side:** jobs stay queued while the repo isn't selected or public
   repos aren't allowed (seen by accident while setting up).
 - **Smoke test workflow** (`.github/workflows/gpu-smoke-test.yml`) is on
-  dirac-institute's runner group list and passes.
+  both orgs' runner group lists and passes in both.
 - **Monitoring container** answers locally on port 9110, every source `1`.
 
 ### Still to do
@@ -64,13 +70,12 @@ Deployed for **dirac-institute**. lincc-frameworks is enabled in
 4. **Fork pull request:** from a fork, open a pull request that adds a
    workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`. Its
    job must stay queued and never reach the VM, even after a maintainer
-   approves the run.
+   approves the run. Do it in both orgs: each group was configured by hand.
 5. **Monitoring from outside:** `curl -s
    http://vga.astro.washington.edu:9110/metrics | grep source_success` from
    another machine (if it can't connect, that is a firewall question for
    IT), then the gadget monitor PR (DEPLOY.md, "Monitoring").
-6. **lincc-frameworks:** register it (`sudo ./register.sh lincc-frameworks`)
-   and start it (`podman compose up -d --build`), then:
+6. **Both orgs together:**
    - **Contention:** start jobs in both orgs at once; one waits, logs who
      holds the GPU, then runs after the other finishes.
    - **Idle check across containers:** whether `nvidia-smi
@@ -82,7 +87,9 @@ Deployed for **dirac-institute**. lincc-frameworks is enabled in
    `/var/run/cdi/nvidia.yaml` (at boot, on driver module load, and on driver
    or toolkit changes). Podman uses the `/var/run/cdi` one; `init.sh`'s is
    never used. Decide whether `init.sh` should stop writing its own and just
-   restart `nvidia-cdi-refresh.service`.
+   restart `nvidia-cdi-refresh.service`. Two specs for the same devices in
+   the *same* directory conflict and podman rejects both (`nvidia-ctk cdi
+   list` finds 0 devices), so never leave a second spec in `/etc/cdi`.
 8. **Boot ordering.** NVIDIA orders docker/containerd/crio after
    `nvidia-cdi-refresh.service`, but not `podman-restart.service`, which
    starts the runners at boot. If the runners start before the spec exists,
