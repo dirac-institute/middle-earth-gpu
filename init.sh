@@ -135,6 +135,32 @@ else
 fi
 # GPU clock locking is deliberately not done here; see DEPLOY.md, "Clocks".
 
+# ── SELinux ─────────────────────────────────────────────────────────────────
+echo
+echo "== SELinux =="
+# Lets GPU containers reach nvidia-persistenced's socket, which the CDI spec
+# mounts into them; see selinux/middle_earth_gpu.te. Rebuilt and reloaded on
+# every run (loading a module again replaces it), so editing the .te file and
+# re-running init.sh is enough. SELinux mode itself is IT's setting and is
+# not changed here.
+SELINUX_MODULE=middle_earth_gpu
+if selinuxenabled 2>/dev/null; then
+    command -v checkmodule >/dev/null || dnf install -y checkpolicy
+    selinux_tmp="$(mktemp -d)"
+    checkmodule -M -m -o "$selinux_tmp/$SELINUX_MODULE.mod" \
+            "$REPO_DIR/selinux/$SELINUX_MODULE.te" >/dev/null \
+        || die "could not compile selinux/$SELINUX_MODULE.te"
+    semodule_package -o "$selinux_tmp/$SELINUX_MODULE.pp" \
+            -m "$selinux_tmp/$SELINUX_MODULE.mod" \
+        || die "could not package selinux/$SELINUX_MODULE.te"
+    semodule -i "$selinux_tmp/$SELINUX_MODULE.pp" \
+        || die "could not load SELinux module $SELINUX_MODULE"
+    rm -rf "$selinux_tmp"
+    echo "  ok   SELinux module $SELINUX_MODULE loaded ($(getenforce))"
+else
+    echo "SELinux is disabled; skipping module $SELINUX_MODULE"
+fi
+
 # ── GPU lock directory ──────────────────────────────────────────────────────
 echo
 echo "== GPU lock =="
