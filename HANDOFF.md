@@ -97,6 +97,14 @@ test.
   `podman-restart` succeeded, all three containers came up with their
   `conmon`, both runners reconnected within ~2 min 10 s, no AVCs, and a
   smoke test passed in each org.
+- **Pull requests can't reach the runners** (2026-11-19): a branch that
+  edited the allowlisted `gpu-smoke-test.yml` to add a `pull_request` trigger
+  (with a first step that fails loudly if it ever runs) was opened as a PR
+  from the lincc-frameworks fork into dirac-institute (#13, a true fork PR)
+  and within lincc-frameworks (#1). Both jobs requested group
+  `middle-earth-gpu` with "Job defined at ...gpu-smoke-test.yml@refs/pull/<n>/merge"
+  and waited; from 20:02:04Z to 20:14:30Z no job reached either runner and
+  the lock stayed clear. Both PRs closed unmerged.
 - **Monitoring:** the container answers on port 9110, and the VM was added
   to the gadget monitor (done separately, 2026-11-19).
 
@@ -104,8 +112,4 @@ test.
 
 1. **Fill in the "Who can change its settings" table** in DEPLOY.md,
    "GitHub-side setup".
-2. **Fork pull request:** from a fork, open a pull request that adds a
-   workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`. Its
-   job must stay queued and never reach the VM, even after a maintainer
-   approves the run. Do it in both orgs: each group was configured by hand.
-3. **Delete this file** once everything above is done.
+2. **Delete this file** once everything above is done.
