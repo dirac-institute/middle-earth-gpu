@@ -152,13 +152,8 @@ BOOT_ORDER_DIR=/etc/systemd/system/podman-restart.service.d
 BOOT_ORDER_FILE="$BOOT_ORDER_DIR/10-middle-earth-gpu.conf"
 want="# Written by middle-earth-gpu's init.sh; edit it there, not here.
 [Unit]
-WantsMountsFor=$SHIRE_DIR"
-if systemctl list-unit-files nvidia-cdi-refresh.service >/dev/null 2>&1; then
-    want="$want
+WantsMountsFor=$SHIRE_DIR
 After=nvidia-cdi-refresh.service"
-else
-    warn "nvidia-cdi-refresh.service not found; runners may start before the GPU is ready at boot"
-fi
 if [ "$(cat "$BOOT_ORDER_FILE" 2>/dev/null)" != "$want" ]; then
     install -d -m 0755 "$BOOT_ORDER_DIR"
     printf '%s\n' "$want" > "$BOOT_ORDER_FILE"
@@ -168,11 +163,9 @@ shire_mount="$(systemd-escape --path --suffix=mount "$SHIRE_DIR")"
 systemctl show -p After podman-restart.service | grep -q "$shire_mount" \
     || die "podman-restart.service is not ordered after $shire_mount; check $BOOT_ORDER_FILE"
 echo "  ok   podman-restart.service starts after $SHIRE_DIR is mounted ($shire_mount)"
-if [[ "$want" == *nvidia-cdi-refresh* ]]; then
-    systemctl show -p After podman-restart.service | grep -q 'nvidia-cdi-refresh.service' \
-        || die "podman-restart.service is not ordered after nvidia-cdi-refresh.service; check $BOOT_ORDER_FILE"
-    echo "  ok   podman-restart.service starts after nvidia-cdi-refresh.service"
-fi
+systemctl show -p After podman-restart.service | grep -q 'nvidia-cdi-refresh.service' \
+    || die "podman-restart.service is not ordered after nvidia-cdi-refresh.service; check $BOOT_ORDER_FILE"
+echo "  ok   podman-restart.service starts after nvidia-cdi-refresh.service"
 
 # ── SELinux ─────────────────────────────────────────────────────────────────
 echo
