@@ -475,10 +475,24 @@ entry. Otherwise the dashboard shows it as down.
 ## Boot persistence
 
 `restart: unless-stopped` only survives reboot if `podman-restart.service` is
-enabled, which `init.sh` does. `init.sh` also orders it after the container
-toolkit's `nvidia-cdi-refresh.service`, which recreates the GPU's CDI spec in
-`/var/run/cdi` at every boot; otherwise the runners could start before their
-GPU device exists. A job that was running at reboot stays "in progress" on
+enabled, which `init.sh` does. By default it waits only for the network, so
+`init.sh` gives it a drop-in
+(`/etc/systemd/system/podman-restart.service.d/10-middle-earth-gpu.conf`)
+that also makes it wait for:
+
+- **the `/service/shire` NFS mount**, which holds the runners'
+  registrations. Without this, a runner can start before the share is
+  mounted and fail ("cannot stat `/service/shire/runner-state/...`"); that
+  fails the whole `podman-restart.service`, and systemd then kills the other
+  containers' `conmon`, so podman loses track of them too. This happened
+  once, on 2026-11-19.
+- **the container toolkit's `nvidia-cdi-refresh.service`**, which recreates
+  the GPU's CDI spec in `/var/run/cdi` at every boot; otherwise the runners
+  could start before their GPU device exists.
+
+If containers are missing after a boot, check
+`systemctl status podman-restart.service` and
+`journalctl -b -u podman-restart`. A job that was running at reboot stays "in progress" on
 GitHub, and its runner takes no new jobs, until someone cancels that run;
 see "Restarting a runner". Its GPU lock is cleared when its runner
 restarts.

@@ -135,30 +135,37 @@ else
 fi
 # GPU clock locking is deliberately not done here; see DEPLOY.md, "Clocks".
 
-# Boot order. The container toolkit's nvidia-cdi-refresh.service creates the
-# GPU's control device nodes and writes the CDI spec podman actually uses
-# (/var/run/cdi/nvidia.yaml; /run is empty after a reboot). It orders
-# docker, containerd and crio after itself, but not podman-restart.service,
-# which starts the runners at boot. Without this they can start before the
-# spec exists, and their GPU device won't resolve. Ordering only: if the
-# refresh fails, the runners still start, as they would without this.
-CDI_ORDER_DIR=/etc/systemd/system/podman-restart.service.d
-CDI_ORDER_FILE="$CDI_ORDER_DIR/10-after-nvidia-cdi-refresh.conf"
-if systemctl list-unit-files nvidia-cdi-refresh.service >/dev/null 2>&1; then
-    want="# Written by middle-earth-gpu's init.sh; edit it there, not here.
+# Boot order. podman-restart.service starts the runners at boot, and waits
+# only for the network. The runners also need:
+# - The NFS share (SHIRE_DIR), which holds their registrations. fstab mounts
+#   it (_netdev), but nothing orders podman after that: on 2026-11-19 podman
+#   tried to start a runner 9 ms before the share was mounted, that runner
+#   failed to start, podman-restart.service failed, and systemd then killed
+#   the other containers' conmon. WantsMountsFor= mounts it and waits.
+# - The container toolkit's nvidia-cdi-refresh.service, which creates the
+#   GPU's control device nodes and writes the CDI spec podman actually uses
+#   (/var/run/cdi/nvidia.yaml; /run is empty after a reboot). NVIDIA orders
+#   docker, containerd and crio after it, but not podman.
+# Wants, not Requires: if either fails, podman still tries to start the
+# containers, as it would without this.
+BOOT_ORDER_DIR=/etc/systemd/system/podman-restart.service.d
+BOOT_ORDER_FILE="$BOOT_ORDER_DIR/10-middle-earth-gpu.conf"
+want="# Written by middle-earth-gpu's init.sh; edit it there, not here.
 [Unit]
+WantsMountsFor=$SHIRE_DIR
 After=nvidia-cdi-refresh.service"
-    if [ "$(cat "$CDI_ORDER_FILE" 2>/dev/null)" != "$want" ]; then
-        install -d -m 0755 "$CDI_ORDER_DIR"
-        printf '%s\n' "$want" > "$CDI_ORDER_FILE"
-        systemctl daemon-reload
-    fi
-    systemctl show -p After podman-restart.service | grep -q 'nvidia-cdi-refresh.service' \
-        || die "podman-restart.service is not ordered after nvidia-cdi-refresh.service; check $CDI_ORDER_FILE"
-    echo "  ok   podman-restart.service starts after nvidia-cdi-refresh.service"
-else
-    warn "nvidia-cdi-refresh.service not found; runners may start before the GPU is ready at boot"
+if [ "$(cat "$BOOT_ORDER_FILE" 2>/dev/null)" != "$want" ]; then
+    install -d -m 0755 "$BOOT_ORDER_DIR"
+    printf '%s\n' "$want" > "$BOOT_ORDER_FILE"
+    systemctl daemon-reload
 fi
+shire_mount="$(systemd-escape --path --suffix=mount "$SHIRE_DIR")"
+systemctl show -p After podman-restart.service | grep -q "$shire_mount" \
+    || die "podman-restart.service is not ordered after $shire_mount; check $BOOT_ORDER_FILE"
+echo "  ok   podman-restart.service starts after $SHIRE_DIR is mounted ($shire_mount)"
+systemctl show -p After podman-restart.service | grep -q 'nvidia-cdi-refresh.service' \
+    || die "podman-restart.service is not ordered after nvidia-cdi-refresh.service; check $BOOT_ORDER_FILE"
+echo "  ok   podman-restart.service starts after nvidia-cdi-refresh.service"
 
 # ── SELinux ─────────────────────────────────────────────────────────────────
 echo

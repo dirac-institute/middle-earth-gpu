@@ -88,7 +88,8 @@ test.
   the next job 5 minutes later; the idle runner reconnected after 2 min 38 s.
   A graceful `podman restart` of an idle runner reconnected in 3 s. Details in
   DEPLOY.md, "Restarting a runner".
-- **Monitoring container** answers locally on port 9110, every source `1`.
+- **Monitoring:** the container answers on port 9110, and the VM was added
+  to the gadget monitor (done separately, 2026-11-19).
 
 ### Still to do
 
@@ -98,8 +99,13 @@ test.
    workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`. Its
    job must stay queued and never reach the VM, even after a maintainer
    approves the run. Do it in both orgs: each group was configured by hand.
-3. **Monitoring from outside:** `curl -s
-   http://vga.astro.washington.edu:9110/metrics | grep source_success` from
-   another machine (if it can't connect, that is a firewall question for
-   IT), then the gadget monitor PR (DEPLOY.md, "Monitoring").
+3. **Reboot again after deploying the NFS boot fix.** The reboot after the
+   2026-11-19 point release (Rocky 10.3, kernel 6.12.0-264, podman 6.1.1)
+   found that podman started the runners before `/service/shire` was
+   mounted: `gpu-runner-dirac-institute` failed to start, and the other two
+   containers lost their `conmon`. `init.sh` now also orders
+   `podman-restart.service` after the mount (DEPLOY.md, "Boot persistence").
+   After `sudo ./init.sh` and a plain `reboot`, check: all three containers
+   Up, `systemctl status podman-restart` succeeded, and the journal shows
+   `service-shire.mount` mounted before `podman-restart` started.
 4. **Delete this file** once everything above is done.
