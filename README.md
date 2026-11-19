@@ -49,7 +49,7 @@ runner group only takes jobs from repos in its own org):
    `schedule`. Never use `pull_request`, `pull_request_target` or
    `workflow_run`.
 2. **Merge it to `main`** through a reviewed pull request.
-3. **Ask an org admin** to add your repo, and this exact workflow entry, to
+3. **Ask an org owner** to add your repo, and this exact workflow entry, to
    the org's `middle-earth-gpu` runner group:
 
    ```
@@ -98,5 +98,5 @@ a runner, the GPU driver, SELinux, boot order and monitoring.
 |---|---|
 | [`USING.md`](USING.md) | You want to run a job on the GPU. |
 | [`DEPLOY.md`](DEPLOY.md) | You are deploying, operating or changing the runners. |
-| [`SECRETS.md`](SECRETS.md) | You are deciding who gets write access to a repo that uses the GPU, or a runner's credentials may have leaked. |
+| [`SECRETS.md`](SECRETS.md) | You are deciding who gets write access to a repo that uses the GPU, want to know who has access to what, or a runner's credentials may have leaked. |
 | [`HANDOFF.md`](HANDOFF.md) | You are finishing the initial deployment: what has been verified, and what is left. |

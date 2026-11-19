@@ -12,11 +12,12 @@ Three people may be involved; they can be the same person.
 | Write the workflow and open a pull request | You | Write access to the repo |
 | Review and merge it to `main` | A maintainer | Whatever the repo's branch protection requires |
 | Protect `main` (once per repo) | A repo admin | Admin on the repo |
-| Add the repo and workflow to the runner group | An org admin | Org owner, or an org role with "Manage organization runners and runner groups" |
+| Add the repo and workflow to the runner group | An org owner | Org owner, or an org role with "Manage organization runners and runner groups" |
 | Start a manual run (`workflow_dispatch`) | Anyone with write access | Write access to the repo |
 
-Repo admins cannot change the runner group: it is an org setting. DEPLOY.md,
-"GitHub-side setup", lists who can change it in each org.
+Repo admins cannot change the runner group: it is an org setting. To find
+your org's owners, see [`SECRETS.md`](SECRETS.md#who-has-access), "Who has
+access".
 
 Your repo must be in `dirac-institute` or `lincc-frameworks`: each org has
 its own runner group, and a runner group only takes jobs from repos in its
@@ -68,7 +69,7 @@ protected before the repo is listed (next step).
 
 ## 3. Get it allowlisted
 
-Ask an org admin to do these in the org's settings, under **Settings → Actions
+Ask an org owner to do these in the org's settings, under **Settings → Actions
 → Runner groups → `middle-earth-gpu`**:
 
 - **Repository access:** add the repo to the selected repositories.
@@ -81,7 +82,7 @@ Ask an org admin to do these in the org's settings, under **Settings → Actions
   For example,
   `dirac-institute/middle-earth-gpu/.github/workflows/gpu-smoke-test.yml@refs/heads/main`.
 
-Before adding it, the admin should check:
+Before adding it, the owner should check:
 
 - `main` requires a reviewed pull request to merge (Settings → Branches, or
   Rules), and consider a CODEOWNERS entry for `.github/workflows/`.
@@ -130,8 +131,8 @@ on `main`). In the job log:
 |---|---|---|
 | "Waiting for a runner to pick up this job", indefinitely | The repo isn't in the group's repository access, the workflow entry is missing or doesn't match exactly, or the run isn't at `refs/heads/main` (see above). GitHub gives no error. | Fix the entry or the trigger, then **cancel the run and start a new one**: a queued run is not matched again. |
 | "Set up runner" says `GPU in use by ...` | Another job holds the GPU. | Nothing: it runs when that job finishes, or fails after 3 hours of waiting. |
-| "Set up runner" says `GPU busy: N MiB in use`, then fails with "The GPU is not idle" | Something is using the GPU although no job holds the lock: a process left behind outside the runners, or on the VM itself. | Tell the VM's operators (DEPLOY.md). |
+| "Set up runner" says `GPU busy: N MiB in use`, then fails with "The GPU is not idle" | Something is using the GPU although no job holds the lock: a process left behind outside the runners, or on the VM itself. | Tell someone with root on `vga` ([`SECRETS.md`](SECRETS.md#who-has-access), "Who has access"). |
 | The runner shows "Offline", or "Active" with nothing running | It was restarted or crashed mid-job. | It recovers by itself; see DEPLOY.md, "Restarting a runner". |
 
-Anything else: ask your org's admins for the runner group (listed in
-DEPLOY.md, "GitHub-side setup").
+Anything else: ask your org's owners, or someone with root on `vga` (see
+[`SECRETS.md`](SECRETS.md#who-has-access), "Who has access").

@@ -73,8 +73,9 @@ Read this before giving anyone write access to a repo that uses this runner.
    runner. Containers keep each org's registration apart, but they are not a
    strong boundary against a determined job.
 3. Therefore **grant merge rights on those repos on the same terms as root SSH
-   access to this VM.** When this was set up, the two groups were the same
-   people, in both orgs.
+   access to this VM.** When this was set up (November 2026), the two were the
+   same people, in both orgs. "Who has access", below, says where to check
+   each.
 
 What keeps everyone else out is GitHub's runner group settings, not anything
 in this repo: only listed workflow files at `refs/heads/main` can use the
@@ -85,3 +86,15 @@ longer holds.
 If that ever stops being true — for example, write access widens to people
 you would not give a shell — move to ephemeral runners (one fresh container
 and single-use registration per job), and re-read this file.
+
+## Who has access
+
+Access is granted on GitHub and in the services spreadsheet, so look it up
+there. Don't copy names into this repo; they would go out of date.
+
+| Who | What they can do here | Where to look |
+|---|---|---|
+| **Org owners** in each org | Change the `middle-earth-gpu` runner group, so which repos and workflows run on this VM; issue registration tokens; remove a runner | [dirac-institute owners](https://github.com/orgs/dirac-institute/people?query=role%3Aowner), [lincc-frameworks owners](https://github.com/orgs/lincc-frameworks/people?query=role%3Aowner) (visible to org members) |
+| Anyone given an org role with "Manage organization runners and runner groups" | The same, for runner groups | The org's Settings → Organization roles → Role assignments (visible to owners) |
+| **Maintainers** of each repo on a runner group's list (anyone who can merge to `main`) | Run code on this VM, as the service account (above) | The repo's Settings → Collaborators and teams, for example [this repo's](https://github.com/dirac-institute/middle-earth-gpu/settings/access) (visible to repo admins). Which repos are listed: the org's Settings → Actions → Runner groups → `middle-earth-gpu` |
+| **Root on `vga`** | Everything, including reading the registrations as the service account | [Services spreadsheet](https://docs.google.com/spreadsheets/d/14ryGw2b2tsHqK27PX1YHzvvZDDEbCNak8C2At-3fgg8/edit?gid=0#gid=0) |

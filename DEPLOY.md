@@ -151,12 +151,10 @@ CODEOWNERS entry for `.github/workflows/`.
 **4. Run pull request CI on GitHub-hosted runners**, not here. They are free
 for public repos, and contributors still get fast feedback.
 
-Keep this table current; a successor may not administer both orgs.
-
-| Org | Runner group | Who can change its settings |
-|---|---|---|
-| `dirac-institute` | `middle-earth-gpu` | TODO |
-| `lincc-frameworks` | `middle-earth-gpu` | TODO |
+Only an org's owners (or someone they give runner-group permission) can
+change these settings, and a successor may not be an owner of both orgs.
+`SECRETS.md`, "Who has access", says how to find each org's owners, each
+repo's maintainers, and who has root on this VM.
 
 ## Using the runner
 
