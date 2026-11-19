@@ -16,6 +16,11 @@ on:
       hold_seconds:
         description: "How long to hold the GPU lock (for testing the lock by hand)"
         default: "0"
+  # SECURITY TEST ONLY - DO NOT MERGE. Simulates a pull request that edits an
+  # allowlisted workflow to run on pull_request. The runner group only accepts
+  # this file at refs/heads/main, so this job must stay queued forever and
+  # never reach the VM (HANDOFF.md, "Fork pull request").
+  pull_request:
 
 permissions: {}
 
@@ -26,6 +31,12 @@ jobs:
       labels: [self-hosted, gpu]
     timeout-minutes: 60
     steps:
+      - name: SECURITY TEST - fail if a pull request reached the runner
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "::error::A pull_request job reached the self-hosted GPU runner. The runner group's workflow restrictions are NOT working. See DEPLOY.md, \"GitHub-side setup\"."
+          exit 1
+
       - name: Variables from the job-started hook
         run: |
           echo "GPU_LOCK_OWNER=$GPU_LOCK_OWNER"
