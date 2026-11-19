@@ -86,8 +86,18 @@ test.
 
 1. **Fill in the "Who can change its settings" table** in DEPLOY.md,
    "GitHub-side setup".
-2. **Reboot the VM mid-job:** the runner comes back, the lock is clear, and
-   how long GitHub keeps it unavailable (DEPLOY.md, "Restarting a runner").
+2. **Reboot the VM mid-job** (check with IT first how a reboot of this VM
+   works). Start a smoke test with `hold_seconds` = 600, then reboot. After
+   it, check:
+   - all three containers came back on their own (`podman ps`);
+   - both runners see the GPU (`podman exec <runner> nvidia-smi -L`); this
+     also tests the boot ordering `init.sh` now sets up
+     (`podman-restart.service` after `nvidia-cdi-refresh.service`; see
+     `journalctl -b -u nvidia-cdi-refresh -u podman-restart` for the order);
+   - the GPU lock is clear;
+   - how long GitHub keeps the interrupted runner offline or "Active"
+     (DEPLOY.md, "Restarting a runner"), and that the next job runs;
+   - no new SELinux denials (`ausearch -m AVC -ts boot`).
 3. **Fork pull request:** from a fork, open a pull request that adds a
    workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`. Its
    job must stay queued and never reach the VM, even after a maintainer
@@ -96,9 +106,4 @@ test.
    http://vga.astro.washington.edu:9110/metrics | grep source_success` from
    another machine (if it can't connect, that is a firewall question for
    IT), then the gadget monitor PR (DEPLOY.md, "Monitoring").
-5. **Boot ordering.** NVIDIA orders docker/containerd/crio after
-   `nvidia-cdi-refresh.service`, but not `podman-restart.service`, which
-   starts the runners at boot. If the runners start before the spec exists,
-   their GPU device won't resolve. Check during the reboot test (2); the fix
-   would be a drop-in from `init.sh` with `After=nvidia-cdi-refresh.service`.
-6. **Delete this file** once everything above is done.
+5. **Delete this file** once everything above is done.

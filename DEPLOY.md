@@ -465,7 +465,10 @@ entry. Otherwise the dashboard shows it as down.
 ## Boot persistence
 
 `restart: unless-stopped` only survives reboot if `podman-restart.service` is
-enabled, which `init.sh` does. A job that was running at reboot fails on
+enabled, which `init.sh` does. `init.sh` also orders it after the container
+toolkit's `nvidia-cdi-refresh.service`, which recreates the GPU's CDI spec in
+`/var/run/cdi` at every boot; otherwise the runners could start before their
+GPU device exists. A job that was running at reboot fails on
 GitHub; its GPU lock is cleared when its runner restarts. Expect the
 runner to be unavailable for a while after a reboot mid-job; see
 "Restarting a runner".

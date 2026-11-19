@@ -135,6 +135,31 @@ else
 fi
 # GPU clock locking is deliberately not done here; see DEPLOY.md, "Clocks".
 
+# Boot order. The container toolkit's nvidia-cdi-refresh.service creates the
+# GPU's control device nodes and writes the CDI spec podman actually uses
+# (/var/run/cdi/nvidia.yaml; /run is empty after a reboot). It orders
+# docker, containerd and crio after itself, but not podman-restart.service,
+# which starts the runners at boot. Without this they can start before the
+# spec exists, and their GPU device won't resolve. Ordering only: if the
+# refresh fails, the runners still start, as they would without this.
+CDI_ORDER_DIR=/etc/systemd/system/podman-restart.service.d
+CDI_ORDER_FILE="$CDI_ORDER_DIR/10-after-nvidia-cdi-refresh.conf"
+if systemctl list-unit-files nvidia-cdi-refresh.service >/dev/null 2>&1; then
+    want="# Written by middle-earth-gpu's init.sh; edit it there, not here.
+[Unit]
+After=nvidia-cdi-refresh.service"
+    if [ "$(cat "$CDI_ORDER_FILE" 2>/dev/null)" != "$want" ]; then
+        install -d -m 0755 "$CDI_ORDER_DIR"
+        printf '%s\n' "$want" > "$CDI_ORDER_FILE"
+        systemctl daemon-reload
+    fi
+    systemctl show -p After podman-restart.service | grep -q 'nvidia-cdi-refresh.service' \
+        || die "podman-restart.service is not ordered after nvidia-cdi-refresh.service; check $CDI_ORDER_FILE"
+    echo "  ok   podman-restart.service starts after nvidia-cdi-refresh.service"
+else
+    warn "nvidia-cdi-refresh.service not found; runners may start before the GPU is ready at boot"
+fi
+
 # ── SELinux ─────────────────────────────────────────────────────────────────
 echo
 echo "== SELinux =="
