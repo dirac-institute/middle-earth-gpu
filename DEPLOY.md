@@ -205,7 +205,7 @@ the runner services in `compose.yaml`:
 |---|---|---|
 | `GPU_LOCK_MAX_WAIT_SECONDS` | 10800 | Fail the job after waiting this long. |
 | `GPU_LOCK_STALE_SECONDS` | 86400 | Treat the *other* runner's lock as abandoned after this long. |
-| `GPU_IDLE_MAX_MIB` | 512 | "Idle" means at most this much GPU memory in use. |
+| `GPU_IDLE_MAX_MIB` | 64 | "Idle" means at most this much GPU memory in use. It is the only check that sees GPU work in the *other* runner's container (`nvidia-smi` lists only processes in its own), so keep it below the ~190 MiB any CUDA process uses; idle is 0 MiB on the L4. |
 | `GPU_IDLE_GRACE_SECONDS` | 60 | How long to wait for the GPU to go idle before failing. |
 
 A lock left behind by a crash clears itself: a runner releases its own lock
@@ -465,7 +465,10 @@ entry. Otherwise the dashboard shows it as down.
 ## Boot persistence
 
 `restart: unless-stopped` only survives reboot if `podman-restart.service` is
-enabled, which `init.sh` does. A job that was running at reboot fails on
+enabled, which `init.sh` does. `init.sh` also orders it after the container
+toolkit's `nvidia-cdi-refresh.service`, which recreates the GPU's CDI spec in
+`/var/run/cdi` at every boot; otherwise the runners could start before their
+GPU device exists. A job that was running at reboot fails on
 GitHub; its GPU lock is cleared when its runner restarts. Expect the
 runner to be unavailable for a while after a reboot mid-job; see
 "Restarting a runner".

@@ -17,10 +17,17 @@ checking on the real VM. Delete this file once everything here is done.
   "GitHub-side setup"). They are what keeps untrusted pull request code off
   this VM.
 
-## Status (2026-11-18, on `vga`)
+## Status (2026-11-19, on `vga`)
 
-Deployed for **dirac-institute**. lincc-frameworks is enabled in
-`compose.yaml` and `init.sh` and is being registered.
+Deployed and passing for **both orgs**: `vga-dirac-institute` and
+`vga-lincc-frameworks`, both in their org's `middle-earth-gpu` runner group.
+
+There are two copies of this repo on GitHub. `dirac-institute/middle-earth-gpu`
+is authoritative: branches, PRs and the VM's checkout use it.
+`lincc-frameworks/middle-earth-gpu` is a fork, synced to `main`, which exists
+only because a runner group accepts jobs from repos in its own org; the
+lincc-frameworks group's workflow list names the fork's copy of the smoke
+test.
 
 ### Done
 
@@ -37,11 +44,10 @@ Deployed for **dirac-institute**. lincc-frameworks is enabled in
 - **SELinux and NFS.** No AVC denials from registering or from the NFS
   mounts. SELinux is Permissive on this VM (accepted); `virt_use_nfs` is on.
   Jobs' `nvidia-smi` was denied access to nvidia-persistenced's socket;
-  `init.sh` now loads `selinux/middle_earth_gpu.te` for that (check after
-  deploying: no new AVCs once both runners are recreated and run a job).
-- **`register.sh`** for dirac-institute: three 0600 files owned by
-  `astro-vga`, unreadable by root, runner `vga-dirac-institute` in group
-  `middle-earth-gpu`.
+  `init.sh` loads `selinux/middle_earth_gpu.te` for that, and after it was
+  loaded, fresh runners in both orgs ran smoke tests with no new AVCs.
+- **`register.sh`** for both orgs: three 0600 files each, owned by
+  `astro-vga`, unreadable by root.
 - **Hooks.** "Set up runner" and "Complete runner" run; `GPU_LOCK_*` and
   `GPU_DRIVER_VERSION` reach the job; nvidia-smi works in jobs.
 - **The lock:** released on cancel (and no processes left over);
@@ -50,42 +56,54 @@ Deployed for **dirac-institute**. lincc-frameworks is enabled in
 - **GitHub-side:** jobs stay queued while the repo isn't selected or public
   repos aren't allowed (seen by accident while setting up).
 - **Smoke test workflow** (`.github/workflows/gpu-smoke-test.yml`) is on
-  dirac-institute's runner group list and passes.
+  both orgs' runner group lists and passes in both.
+- **Two CDI specs (decided: leave as-is, 2026-11-19).** `init.sh` writes
+  `/etc/cdi/nvidia.yaml`, and the container toolkit's
+  `nvidia-cdi-refresh.service` writes `/var/run/cdi/nvidia.yaml` (at boot, on
+  driver module load, and on driver or toolkit changes). Podman uses the
+  `/var/run/cdi` one, so `init.sh`'s is redundant but harmless. Two specs
+  for the same devices in the *same* directory do conflict, and podman
+  rejects both (`nvidia-ctk cdi list` finds 0 devices), so never leave a
+  second spec in `/etc/cdi`.
+- **Idle check across containers** (2026-11-19): `nvidia-smi
+  --query-compute-apps` in one runner does not list processes in the other,
+  but memory use is shared. A CUDA process holds ~190 MiB before allocating
+  anything and the idle baseline is 0 MiB, so `GPU_IDLE_MAX_MIB` went from
+  512 to 64.
+- **Contention between orgs** (2026-11-19): lincc-frameworks held the GPU
+  for 300 s from 18:34:07Z; dirac-institute's job, started at 18:34:37Z,
+  waited in "Set up runner" ("GPU in use by 'lincc-frameworks' (...)"), took
+  the lock after lincc-frameworks released it at 18:39:08Z, and both
+  succeeded.
+- **Busy GPU** (2026-11-19): with a host process holding 1216 MiB, a
+  lincc-frameworks job took the lock, reported the GPU busy for 60 s, failed
+  in "Set up runner" with "The GPU is not idle..." and `nvidia-smi` output,
+  and the lock was released. `nvidia-smi --query-compute-apps` in the runner
+  did not list the host process either; the memory threshold caught it.
 - **Monitoring container** answers locally on port 9110, every source `1`.
 
 ### Still to do
 
 1. **Fill in the "Who can change its settings" table** in DEPLOY.md,
    "GitHub-side setup".
-2. **Busy GPU:** with a CUDA process holding GPU memory on the host, a job
-   must fail in "Set up runner" with "The GPU is not idle".
-3. **Reboot the VM mid-job:** the runner comes back, the lock is clear, and
-   how long GitHub keeps it unavailable (DEPLOY.md, "Restarting a runner").
-4. **Fork pull request:** from a fork, open a pull request that adds a
+2. **Reboot the VM mid-job** (check with IT first how a reboot of this VM
+   works). Start a smoke test with `hold_seconds` = 600, then reboot. After
+   it, check:
+   - all three containers came back on their own (`podman ps`);
+   - both runners see the GPU (`podman exec <runner> nvidia-smi -L`); this
+     also tests the boot ordering `init.sh` now sets up
+     (`podman-restart.service` after `nvidia-cdi-refresh.service`; see
+     `journalctl -b -u nvidia-cdi-refresh -u podman-restart` for the order);
+   - the GPU lock is clear;
+   - how long GitHub keeps the interrupted runner offline or "Active"
+     (DEPLOY.md, "Restarting a runner"), and that the next job runs;
+   - no new SELinux denials (`ausearch -m AVC -ts boot`).
+3. **Fork pull request:** from a fork, open a pull request that adds a
    workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`. Its
    job must stay queued and never reach the VM, even after a maintainer
-   approves the run.
-5. **Monitoring from outside:** `curl -s
+   approves the run. Do it in both orgs: each group was configured by hand.
+4. **Monitoring from outside:** `curl -s
    http://vga.astro.washington.edu:9110/metrics | grep source_success` from
    another machine (if it can't connect, that is a firewall question for
    IT), then the gadget monitor PR (DEPLOY.md, "Monitoring").
-6. **lincc-frameworks:** register it (`sudo ./register.sh lincc-frameworks`)
-   and start it (`podman compose up -d --build`), then:
-   - **Contention:** start jobs in both orgs at once; one waits, logs who
-     holds the GPU, then runs after the other finishes.
-   - **Idle check across containers:** whether `nvidia-smi
-     --query-compute-apps` in one container lists processes started in the
-     other. If not, the memory threshold still catches a busy GPU; set
-     `GPU_IDLE_MAX_MIB` from the idle baseline (0 MiB on this L4 so far).
-7. **Two CDI specs.** `init.sh` writes `/etc/cdi/nvidia.yaml`, and the
-   container toolkit's `nvidia-cdi-refresh.service` writes
-   `/var/run/cdi/nvidia.yaml` (at boot, on driver module load, and on driver
-   or toolkit changes). Podman uses the `/var/run/cdi` one; `init.sh`'s is
-   never used. Decide whether `init.sh` should stop writing its own and just
-   restart `nvidia-cdi-refresh.service`.
-8. **Boot ordering.** NVIDIA orders docker/containerd/crio after
-   `nvidia-cdi-refresh.service`, but not `podman-restart.service`, which
-   starts the runners at boot. If the runners start before the spec exists,
-   their GPU device won't resolve. Check during the reboot test (3); the fix
-   would be a drop-in from `init.sh` with `After=nvidia-cdi-refresh.service`.
-9. **Delete this file** once everything above is done.
+5. **Delete this file** once everything above is done.
