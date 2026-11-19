@@ -88,6 +88,15 @@ test.
   the next job 5 minutes later; the idle runner reconnected after 2 min 38 s.
   A graceful `podman restart` of an idle runner reconnected in 3 s. Details in
   DEPLOY.md, "Restarting a runner".
+- **Point release and NFS boot order** (2026-11-19): IT's update to Rocky
+  10.3 (kernel 6.12.0-264, podman 6.1.1) kept the NVIDIA driver working (DKMS
+  built it for the new kernel) and the SELinux module loaded. The reboot
+  after it found podman starting the runners 9 ms before `/service/shire`
+  was mounted; `init.sh` now orders `podman-restart.service` after the mount.
+  On the next plain reboot the share was mounted 2 ms before podman started,
+  `podman-restart` succeeded, all three containers came up with their
+  `conmon`, both runners reconnected within ~2 min 10 s, no AVCs, and a
+  smoke test passed in each org.
 - **Monitoring:** the container answers on port 9110, and the VM was added
   to the gadget monitor (done separately, 2026-11-19).
 
@@ -99,13 +108,4 @@ test.
    workflow with `runs-on: { group: middle-earth-gpu, labels: [gpu] }`. Its
    job must stay queued and never reach the VM, even after a maintainer
    approves the run. Do it in both orgs: each group was configured by hand.
-3. **Reboot again after deploying the NFS boot fix.** The reboot after the
-   2026-11-19 point release (Rocky 10.3, kernel 6.12.0-264, podman 6.1.1)
-   found that podman started the runners before `/service/shire` was
-   mounted: `gpu-runner-dirac-institute` failed to start, and the other two
-   containers lost their `conmon`. `init.sh` now also orders
-   `podman-restart.service` after the mount (DEPLOY.md, "Boot persistence").
-   After `sudo ./init.sh` and a plain `reboot`, check: all three containers
-   Up, `systemctl status podman-restart` succeeded, and the journal shows
-   `service-shire.mount` mounted before `podman-restart` started.
-4. **Delete this file** once everything above is done.
+3. **Delete this file** once everything above is done.
